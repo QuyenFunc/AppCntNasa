@@ -56,17 +56,23 @@ class NtripClient {
           ? await SecureSocket.connect(host, port, timeout: timeout)
           : await Socket.connect(host, port, timeout: timeout);
 
-      final auth = base64.encode(utf8.encode('$username:$password'));
-      final req = StringBuffer()
-        ..writeln('GET /$mountPoint HTTP/1.1')
-        ..writeln('Host: $host')
-        ..writeln('User-Agent: NTRIP Flutter/1.0')
-        ..writeln('Ntrip-Version: Ntrip/2.0')
-        ..writeln('Authorization: Basic $auth')
-        ..writeln('Connection: close')
-        ..writeln(); // kết thúc header bằng CRLF CRLF
+      // Build request headers
+      String req = 'GET /$mountPoint HTTP/1.1\r\n'
+          'Host: $host\r\n'
+          'User-Agent: NTRIP Flutter/1.0\r\n'
+          'Ntrip-Version: Ntrip/2.0\r\n';
+      
+      // Only add authorization if credentials are provided
+      if (username.isNotEmpty && password.isNotEmpty) {
+        final auth = base64.encode(utf8.encode('$username:$password'));
+        req += 'Authorization: Basic $auth\r\n';
+      }
+      
+      req += 'Connection: close\r\n'
+          '\r\n'; // End headers with CRLF CRLF
 
-      _sock!.add(utf8.encode(req.toString()));
+      print('NTRIP Request:\n$req');
+      _sock!.add(utf8.encode(req));
 
       final headerBuf = BytesBuilder();
       bool headerDone = false;
@@ -80,11 +86,19 @@ class NtripClient {
             if (idx != -1) {
               final header = utf8.decode(bytes.sublist(0, idx));
               print('NTRIP Response Header:\n$header');
-              
-              if (!header.contains('200') && !header.toUpperCase().contains('ICY')) {
-                throw Exception('NTRIP handshake failed:\n$header');
+
+              final up = header.toUpperCase();
+              if (!(up.contains(' 200 ') || up.startsWith('ICY 200'))) {
+                // Handle 401 Unauthorized specifically
+                if (up.contains('401')) {
+                  _safeAddError('401 Unauthorized: Check NTRIP username/password and mountpoint access permissions');
+                } else {
+                  _safeAddError('NTRIP handshake failed: $header');
+                }
+                _closeInternal();
+                return;
               }
-              
+
               headerDone = true;
               final rest = bytes.sublist(idx);
               if (rest.isNotEmpty) {
@@ -97,26 +111,46 @@ class NtripClient {
           }
         },
         onError: (error) {
-          print('NTRIP connection error: $error');
-          close();
+          _safeAddError('NTRIP socket error: $error');
+          _closeInternal();
         },
         onDone: () {
           print('NTRIP connection closed by server');
-          close();
+          _closeInternal();
         },
       );
     } catch (e) {
-      print('NTRIP connection failed: $e');
+      _safeAddError('NTRIP connection failed: $e');
       rethrow;
     }
   }
 
+  // Safe error handling to avoid exceptions during error reporting
+  void _safeAddError(String msg) {
+    try { 
+      if (!_statsCtrl.isClosed) {
+        _statsCtrl.addError(Exception(msg)); 
+      }
+    } catch (_) {
+      print('Error reporting failed: $msg');
+    }
+  }
+
+  // Clean internal close without exceptions
+  Future<void> _closeInternal() async {
+    try {
+      await _sub?.cancel();
+      _sub = null;
+      await _sock?.close();
+      _sock = null;
+      print('NTRIP client closed');
+    } catch (e) {
+      print('Error during close: $e');
+    }
+  }
+
   Future<void> close() async {
-    await _sub?.cancel();
-    _sub = null;
-    
-    await _sock?.close();
-    _sock = null;
+    await _closeInternal();
     
     if (!_statsCtrl.isClosed) {
       await _statsCtrl.close();
@@ -124,8 +158,6 @@ class NtripClient {
     if (!_rawDataCtrl.isClosed) {
       await _rawDataCtrl.close();
     }
-    
-    print('NTRIP client closed');
   }
 
   int _findHeaderEnd(Uint8List b) {
@@ -184,17 +216,22 @@ class NtripClient {
           ? await SecureSocket.connect(host, port, timeout: timeout)
           : await Socket.connect(host, port, timeout: timeout);
 
-      final auth = base64.encode(utf8.encode('$username:$password'));
-      final req = StringBuffer()
-        ..writeln('GET / HTTP/1.1')
-        ..writeln('Host: $host')
-        ..writeln('User-Agent: NTRIP Flutter/1.0')
-        ..writeln('Ntrip-Version: Ntrip/2.0')
-        ..writeln('Authorization: Basic $auth')
-        ..writeln('Connection: close')
-        ..writeln();
+      // Build request headers
+      String req = 'GET / HTTP/1.1\r\n'
+          'Host: $host\r\n'
+          'User-Agent: NTRIP Flutter/1.0\r\n'
+          'Ntrip-Version: Ntrip/2.0\r\n';
+      
+      // Only add authorization if credentials are provided
+      if (username.isNotEmpty && password.isNotEmpty) {
+        final auth = base64.encode(utf8.encode('$username:$password'));
+        req += 'Authorization: Basic $auth\r\n';
+      }
+      
+      req += 'Connection: close\r\n'
+          '\r\n';
 
-      sock.add(utf8.encode(req.toString()));
+      sock.add(utf8.encode(req));
 
       final response = StringBuffer();
       await for (final chunk in sock) {

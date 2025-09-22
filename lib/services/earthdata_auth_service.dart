@@ -38,6 +38,7 @@ class EarthdataAuthService {
   Stream<bool> get authStateChanges => _authStateController.stream;
   bool get isAuthenticated => _isAuthenticated;
   Map<String, dynamic>? get userProfile => _userProfile;
+  String? get accessToken => _accessToken;
   
   // Initialize authentication service
   Future<void> initialize() async {

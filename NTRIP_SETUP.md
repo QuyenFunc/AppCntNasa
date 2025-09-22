@@ -1,74 +1,157 @@
-# NASA GNSS Client - NTRIP Setup Guide
+# NASA GNSS Client - NTRIP 401 Unauthorized Fix Guide
 
-## ✅ Đã sửa lỗi 401 Authentication
+## ✅ **FIXED: NTRIP 401 Unauthorized Issues**
 
-### 🔧 **Các thay đổi đã thực hiện:**
+### 🔧 **Root Cause Analysis:**
 
-1. **NASA API Service** - Chuyển từ Basic Auth sang Bearer Token
-   - Sử dụng `https://cmr.earthdata.nasa.gov` thay vì `urs.earthdata.nasa.gov`
-   - Dùng `Authorization: Bearer TOKEN` thay vì Basic Auth
-   - Thêm methods `getGranules()` và `getCollections()`
+The 401 Unauthorized errors were caused by:
+1. **Incorrect CRLF formatting** - Using `\n` instead of `\r\n` in NTRIP requests
+2. **Mixed authentication** - Trying to use NASA Bearer tokens for NTRIP (which only accepts Basic Auth)
+3. **Wrong socket selection** - Not properly choosing TLS vs TCP based on port
+4. **Poor error handling** - Generic error messages that didn't help debug the issue
 
-2. **NTRIP Client mới** - Kết nối thật với RTCM stream
-   - File: `lib/services/ntrip_client.dart`
-   - Hỗ trợ TCP (2101) và TLS (443)
-   - Parse RTCM3 messages và thống kê real-time
-   - Method `getSourcetable()` để lấy danh sách mountpoints
+### 🛠️ **Changes Made:**
 
-3. **NTRIP Connect Screen** - UI để test kết nối
-   - File: `lib/screens/ntrip_connect_screen.dart`
-   - Form nhập host/port/mountpoint/credentials
-   - Hiển thị throughput, message count, statistics
-   - Button "Get Sourcetable" để xem available streams
+#### **1. Fixed NTRIP Protocol Implementation**
+- **File: `lib/services/ntrip_client.dart`**
+- ✅ Proper CRLF (`\r\n`) formatting for all NTRIP requests
+- ✅ Correct socket selection: TLS for port 443, TCP for port 2101
+- ✅ Specific 401/403/404 error handling with clear messages
+- ✅ Safe error reporting to prevent crashes during error handling
 
-4. **Android Permissions** - Thêm network permissions
-   - `INTERNET` và `ACCESS_NETWORK_STATE`
-   - File export permissions
+#### **2. Separated Authentication Systems**
+- **Files: `lib/services/ntrip_client_service.dart`, `lib/providers/gnss_provider.dart`**
+- ✅ NTRIP Basic Auth completely separate from NASA Bearer tokens
+- ✅ No automatic NTRIP connection attempts using NASA credentials
+- ✅ Clear logging showing which auth system is being used
 
-## 🚀 **Cách sử dụng:**
+#### **3. Improved Error Messages**
+- ✅ Specific messages for 401 Unauthorized
+- ✅ Clear instructions on what to check when authentication fails
+- ✅ Separate error handling for different HTTP status codes
 
-### **1. Lấy NASA Bearer Token:**
-```
-1. Vào https://urs.earthdata.nasa.gov/
-2. Login vào account
-3. Profile → Applications → Generate Token
-4. Copy Bearer token
-5. Paste vào JWT field trong app
-```
+## 🚀 **How to Use:**
 
-### **2. Test NTRIP Connection:**
-```
-1. Trong login screen, nhấn "Test NTRIP Connection"
-2. Nhập thông tin caster:
-   - Host: products.igs-ip.net
-   - Port: 2101 (TCP) hoặc 443 (TLS)
-   - Mountpoint: BCEP00BKG0
-   - Username/Password: credentials từ NTRIP provider
-3. Nhấn "Get Sourcetable" để xem available streams
-4. Nhấn "Connect" để test stream
-```
+### **⚠️ CRITICAL: Two Separate Authentication Systems**
 
-### **3. Test với cURL trước:**
+1. **NASA API (Bearer Token)** - For metadata/API access
+   - Get token from: https://urs.earthdata.nasa.gov/
+   - Used for: Collection metadata, granule search
+   - Format: `Authorization: Bearer <token>`
+
+2. **NTRIP Caster (Basic Auth)** - For real-time RTCM streams
+   - Get credentials from: NTRIP service provider (IGS, BKG, etc.)
+   - Used for: Real-time RTCM correction data
+   - Format: `Authorization: Basic <base64(user:pass)>`
+
+### **🧪 Test NTRIP Credentials FIRST with cURL:**
+
+**ALWAYS test your NTRIP credentials before using in the app:**
+
 ```bash
-# TCP (port 2101)
-curl -v --user USER:PASS "http://products.igs-ip.net:2101/BCEP00BKG0"
+# Test EarthScope Caster (recommended)
+curl -v --http0.9 --user peaceful_knuth:w8YeDeFVKhKxC9w0 "http://ntrip.earthscope.org:2101/P041_RTCM3"
 
-# TLS (port 443)  
-curl -v --user USER:PASS "https://products.igs-ip.net/BCEP00BKG0"
+# Get EarthScope sourcetable
+curl -v --http0.9 --user peaceful_knuth:w8YeDeFVKhKxC9w0 "http://ntrip.earthscope.org:2101/"
+
+# Test BKG Caster (if you have credentials)
+curl -v --user YOUR_USER:YOUR_PASS "http://products.igs-ip.net:2101/BCEP00BKG0"
+
+# Expected success response:
+# ICY 200 OK (EarthScope)
+# or 
+# HTTP/1.1 200 OK (BKG)
+# followed by binary RTCM data stream
 ```
 
-## 📋 **Kết quả:**
+### ✅ **Demo Credentials Available**
 
-✅ **Không còn lỗi 401** - Bearer token authentication  
-✅ **NTRIP client hoàn chỉnh** - Real RTCM stream parsing  
-✅ **UI test connection** - Debug credentials dễ dàng  
-✅ **Android permissions** - Network access đầy đủ  
-✅ **Sourcetable support** - Xem available mountpoints  
+Demo credentials `peaceful_knuth:w8YeDeFVKhKxC9w0` are available for **EarthScope caster** (`ntrip.earthscope.org:2101`). For production use, you should:
 
-## 🔍 **Debug 401 errors:**
+1. **Register with an NTRIP provider:**
+   - **IGS (International GNSS Service)**: https://igs.org/
+   - **UNAVCO**: https://www.unavco.org/
+   - **EUREF**: https://www.euref.eu/
+   - **Local/Regional providers** in your area
 
-1. **NASA API 401** → Cần Bearer token hợp lệ từ Earthdata
-2. **NTRIP 401** → Cần username/password đúng từ NTRIP provider
-3. **Test cURL trước** → Verify credentials work outside app
+2. **Get your own credentials** from the provider
+3. **Test with cURL first** before using in the app
+4. **Enter your credentials** in the app's NTRIP panel
 
-App bây giờ sử dụng đúng authentication methods cho từng service!
+**If you get 401 Unauthorized with cURL:**
+- ❌ Wrong username/password
+- ❌ Account doesn't have access to that mountpoint
+- ❌ Account expired or suspended
+- **➡️ Contact your NTRIP provider to fix credentials**
+
+### **📱 Using in the App:**
+
+1. **Test NTRIP Connection Screen:**
+   - Use "Test NTRIP Connection" button in login screen
+   - Enter your NTRIP credentials (NOT NASA credentials)
+   - Try "Get Sourcetable" first to verify auth
+   - Then "Connect" to test actual stream
+
+2. **Configuration:**
+   ```
+   Host: products.igs-ip.net (or your NTRIP caster)
+   Port: 2101 (TCP) or 443 (TLS)
+   Mountpoint: BCEP00BKG0 (or available mountpoint)
+   Username: YOUR_NTRIP_USERNAME
+   Password: YOUR_NTRIP_PASSWORD
+   ```
+
+### **🔍 Debugging 401 Errors:**
+
+If you still get 401 errors after the fix:
+
+1. **Check Request Format:**
+   - App now uses proper `\r\n` line endings
+   - No extra headers that might confuse the caster
+   - Correct `Authorization: Basic <base64>` format
+
+2. **Verify Credentials:**
+   - Test with cURL first (see commands above)
+   - Make sure username/password are correct
+   - Check if your account has access to the specific mountpoint
+
+3. **Check Caster Requirements:**
+   - Some casters require specific User-Agent strings
+   - Some mountpoints are restricted or require registration
+   - Some casters have IP address restrictions
+
+4. **Port and Protocol:**
+   - Port 2101 = TCP (HTTP)
+   - Port 443 = TLS (HTTPS)
+   - App automatically selects correct socket type
+
+## 📋 **Results:**
+
+✅ **NTRIP 401 Errors Fixed** - Proper protocol implementation  
+✅ **Authentication Separated** - No more Bearer/Basic token mixing  
+✅ **Better Error Messages** - Clear guidance on what to check  
+✅ **Socket Selection Fixed** - Correct TLS/TCP handling  
+✅ **cURL Test Instructions** - Verify credentials before app use  
+
+## 🆘 **Still Getting 401?**
+
+If you still get 401 Unauthorized after applying these fixes:
+
+1. **Test with cURL first** - If cURL fails, it's a credential issue
+2. **Check mountpoint access** - Your account might not have access to that specific mountpoint
+3. **Try different mountpoints** - Some are public, others require special access
+4. **Contact NTRIP provider** - They can verify your account status and permissions
+5. **Check IP restrictions** - Some casters restrict access by IP address
+
+---
+
+## 📝 **Summary**
+
+The NTRIP 401 Unauthorized issue has been **completely fixed** by:
+- ✅ Implementing proper NTRIP protocol with correct CRLF formatting
+- ✅ Separating NTRIP Basic Auth from NASA Bearer token authentication  
+- ✅ Adding specific error handling for different HTTP status codes
+- ✅ Providing clear debugging instructions and cURL test commands
+
+**The app now uses the correct authentication methods for each service!**

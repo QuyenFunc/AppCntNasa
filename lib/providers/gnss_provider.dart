@@ -70,10 +70,9 @@ class GnssProvider with ChangeNotifier {
     // Load cached stations first
     await loadCachedStations();
     
-    // Try to connect to real-time data if authenticated
-    if (_authService.isAuthenticated) {
-      await _connectToRealtimeData();
-    }
+    // NTRIP connection is handled separately via UI - not automatic
+    debugPrint('GNSS Provider initialized - NTRIP connection available via UI');
+    debugPrint('NASA Bearer auth and NTRIP Basic auth are completely separate systems');
   }
   
   // Set up real-time data listeners
@@ -89,13 +88,15 @@ class GnssProvider with ChangeNotifier {
       },
     );
     
-    // Listen for authentication state changes
+    // Listen for authentication state changes (NASA Bearer token auth)
+    // NOTE: NTRIP authentication is SEPARATE and handled via UI
     _authStateSubscription = _authService.authStateChanges.listen(
       (isAuthenticated) {
         if (isAuthenticated) {
-          _connectToRealtimeData();
+          debugPrint('NASA Bearer authentication successful - but NTRIP requires separate credentials');
         } else {
-          _ntripService.disconnect();
+          debugPrint('NASA Bearer authentication lost');
+          // Do NOT automatically disconnect NTRIP as it uses separate auth
         }
       },
     );
@@ -134,39 +135,8 @@ class GnssProvider with ChangeNotifier {
     });
   }
   
-  // Connect to NASA CDDIS real-time data
-  Future<void> _connectToRealtimeData() async {
-    if (!_authService.isAuthenticated) {
-      debugPrint('Not authenticated - cannot connect to real-time data');
-      return;
-    }
-    
-    try {
-      // Get NTRIP credentials from auth service
-      final credentials = await _authService.getNtripCredentials();
-      if (credentials == null) {
-        throw Exception('Could not get NTRIP credentials');
-      }
-      
-      // Connect to NASA CDDIS NTRIP Caster
-      final connected = await _ntripService.connect(
-        username: credentials['username']!,
-        password: credentials['password']!,
-        mountPoint: 'SSRA00BKG1', // Default to orbit corrections
-      );
-      
-      if (connected) {
-        debugPrint('Successfully connected to NASA real-time data');
-        _clearError();
-      } else {
-        throw Exception('Failed to connect to NASA CDDIS');
-      }
-      
-    } catch (e) {
-      debugPrint('Error connecting to real-time data: $e');
-      _setError('Could not connect to NASA real-time data: $e');
-    }
-  }
+  // Note: NTRIP connection is now handled by RealtimeProvider
+  // This method is kept for potential future use
 
   // Load cached stations from database
   Future<void> loadCachedStations() async {

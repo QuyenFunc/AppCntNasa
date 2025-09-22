@@ -1,5 +1,13 @@
 import 'package:flutter/material.dart';
-import '../screens/charts_screen.dart';
+
+enum ChartType {
+  position,
+  velocity,
+  satellites,
+  accuracy,
+  signalStrength,
+  combined,
+}
 
 class ChartControls extends StatelessWidget {
   final ChartType chartType;

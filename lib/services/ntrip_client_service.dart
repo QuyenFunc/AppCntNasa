@@ -8,6 +8,7 @@ import '../models/gnss_station.dart';
 import 'database_service.dart';
 import 'notification_service.dart';
 import 'earthdata_auth_service.dart';
+import 'ntrip_client.dart';
 
 class NtripClientService {
   static final NtripClientService _instance = NtripClientService._internal();
@@ -22,6 +23,8 @@ class NtripClientService {
   
   final DatabaseService _databaseService = DatabaseService();
   final NotificationService _notificationService = NotificationService();
+  // Note: Auth service kept for potential future use
+  // ignore: unused_field
   final EarthdataAuthService _authService = EarthdataAuthService();
   
   // Connection state
@@ -63,10 +66,10 @@ class NtripClientService {
     debugPrint('NTRIP Client Service initialized - Real data mode only');
   }
   
-  // Connect to NASA CDDIS NTRIP Caster
+  // Connect to NTRIP Caster with Basic Auth (COMPLETELY SEPARATE from NASA Bearer auth)
   Future<bool> connect({
-    String? username,
-    String? password,
+    required String username,
+    required String password,
     String mountPoint = 'RTCM3EPH',
   }) async {
     if (_isConnecting || _isConnected) {
@@ -75,81 +78,82 @@ class NtripClientService {
     }
     
     _isConnecting = true;
-    _connectionStatusController.add('Connecting to NASA CDDIS...');
+    _connectionStatusController.add('Connecting to NTRIP caster...');
     
     try {
-      // Get credentials from auth service if not provided
-      String finalUsername = username ?? '';
-      String finalPassword = password ?? '';
-      
-      if (finalUsername.isEmpty || finalPassword.isEmpty) {
-        final credentials = await _authService.getNtripCredentials();
-        if (credentials != null) {
-          finalUsername = credentials['username'] ?? '';
-          finalPassword = credentials['password'] ?? '';
-          debugPrint('Using NASA Earthdata credentials for NTRIP');
-        } else {
-          throw Exception('No valid NASA Earthdata credentials available. Please login first.');
-        }
+      if (username.isEmpty || password.isEmpty) {
+        throw Exception('NTRIP username and password are required');
       }
       
-      if (finalUsername.isEmpty || finalPassword.isEmpty) {
-        throw Exception('Invalid credentials provided');
-      }
+      debugPrint('NTRIP: Using ONLY Basic Auth (NO Bearer tokens) with username: $username');
       
-      // Preflight: fetch sourcetable to ensure credentials are accepted
-      final ok = await _preflightAuthorize(finalUsername, finalPassword);
-      if (!ok) {
-        throw Exception('Authentication failed during preflight - NASA Earthdata credentials rejected');
-      }
-      // Establish raw TLS socket (avoids HTTP/2 upgrades)
-      _socket = await SecureSocket.connect(
-        _host,
-        _port,
-        timeout: const Duration(seconds: 30),
-        onBadCertificate: (_) => true,
+      // Determine socket type based on port
+      final useTls = _port == 443;
+      debugPrint('NTRIP: Using ${useTls ? 'TLS' : 'TCP'} socket for port $_port');
+      
+      // Use the corrected NtripClient implementation
+      final client = NtripClient(
+        host: _host,
+        port: _port,
+        mountPoint: mountPoint,
+        username: username,
+        password: password,
+        useTls: useTls,
       );
+      
+      // Connect using the corrected client
+      await client.connect();
+      
+      // Listen to the client's streams
+      client.statsStream.listen((stats) {
+        _realtimeDataController.add({
+          'frames': stats.frames,
+          'bytes': stats.bytes,
+          'bitrateKbps': stats.bitrateKbps,
+          'messageCount': stats.msgCount.length,
+          'summary': stats.summary,
+          'timestamp': DateTime.now().toIso8601String(),
+          'mountPoint': mountPoint,
+        });
+      });
+      
+      client.rawDataStream.listen((data) {
+        _processRtcmData(data, mountPoint);
+      });
 
-      // Build NTRIP GET request (NASA docs recommend these headers)
-      final credentials = base64.encode(utf8.encode('$finalUsername:$finalPassword'));
-      final request = StringBuffer()
-        ..write('GET /$mountPoint HTTP/1.1\r\n')
-        ..write('Host: $_host\r\n')
-        ..write('User-Agent: NTRIP NasaGnssClient/1.0\r\n')
-        ..write('Ntrip-Version: Ntrip/2.0\r\n')
-        ..write('Accept: */*\r\n')
-        ..write('Connection: close\r\n')
-        ..write('Authorization: Basic $credentials\r\n')
-        ..write('\r\n');
+      _isConnected = true;
+      _isConnecting = false;
+      _connectionStatusController.add('Connected to NTRIP caster - Real data stream active');
+      _notificationService.showDataRefreshNotification(1);
+      debugPrint('Successfully connected to NTRIP caster - Real RTCM data stream started');
 
-      _socket!.add(utf8.encode(request.toString()));
-      await _socket!.flush();
-
-      // Listen for response; parse headers once, then stream RTCM payload
-      _headersParsed = false;
-      _headerBuffer.clear();
-
-      _socketSubscription = _socket!.listen(
-        (List<int> data) => _onSocketData(data, mountPoint),
-        onError: (error) => _onSocketError(error),
-        onDone: _onSocketDone,
-        cancelOnError: true,
-      );
-
-      return true; // Will emit connected status after headers parsed
+      return true;
 
     } catch (e) {
       _isConnected = false;
       _isConnecting = false;
-      _connectionStatusController.add('Connection failed: $e');
       
-      debugPrint('NTRIP connection error: $e');
+      // Provide specific error messages for different failure types
+      String errorMsg;
+      if (e.toString().contains('401')) {
+        errorMsg = 'NTRIP 401 Unauthorized: Check your NTRIP username/password and mountpoint access permissions';
+      } else if (e.toString().contains('404')) {
+        errorMsg = 'NTRIP 404 Not Found: Mountpoint "$mountPoint" does not exist on this caster';
+      } else if (e.toString().contains('403')) {
+        errorMsg = 'NTRIP 403 Forbidden: Your account does not have access to mountpoint "$mountPoint"';
+      } else {
+        errorMsg = 'NTRIP connection failed: $e';
+      }
+      
+      _connectionStatusController.add(errorMsg);
+      debugPrint('NTRIP connection error: $errorMsg');
       await _notificationService.showConnectionErrorNotification();
       return false;
     }
   }
 
   // Preflight sourcetable authorization to validate credentials
+  // ignore: unused_element
   Future<bool> _preflightAuthorize(String username, String password) async {
     try {
       final creds = base64.encode(utf8.encode('$username:$password'));
@@ -194,6 +198,7 @@ class NtripClientService {
     }
   }
 
+  // ignore: unused_element
   void _onSocketData(List<int> data, String mountPoint) {
     try {
       if (!_headersParsed) {
@@ -248,6 +253,7 @@ class NtripClientService {
     _reconnect();
   }
 
+  // ignore: unused_element
   void _onSocketDone() {
     debugPrint('Stream closed');
     _isConnected = false;
@@ -589,16 +595,8 @@ class NtripClientService {
     return 35.0 + (data[1] % 25); // 35-60 dB
   }
   
-  // Connect using NASA Earthdata authentication
-  Future<bool> connectWithEarthdataAuth({String mountPoint = 'RTCM3EPH'}) async {
-    if (!_authService.isAuthenticated) {
-      _connectionStatusController.add('NASA Earthdata authentication required');
-      debugPrint('Cannot connect to NTRIP: Not authenticated with NASA Earthdata');
-      return false;
-    }
-    
-    return await connect(mountPoint: mountPoint);
-  }
+  // Note: NTRIP uses separate Basic Auth credentials, not NASA Bearer tokens
+  // Use connect() method with NTRIP-specific username/password
 
   // Get list of available mount points from NASA CDDIS
   Future<List<String>> getAvailableMountPoints() async {

@@ -5,15 +5,12 @@ import 'package:hive_flutter/hive_flutter.dart';
 
 import 'providers/gnss_provider.dart';
 import 'providers/theme_provider.dart';
-import 'screens/home_screen.dart';
-import 'screens/login_screen.dart';
-import 'screens/station_details_screen.dart';
-import 'screens/ntrip_config_screen.dart';
-import 'screens/ntrip_connect_screen.dart';
+import 'screens/main_navigation_screen.dart';
+import 'providers/realtime_provider.dart';
+import 'providers/offline_provider.dart';
 import 'models/gnss_station.dart';
 import 'services/database_service.dart';
 import 'services/notification_service.dart';
-import 'services/earthdata_auth_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -28,16 +25,11 @@ void main() async {
   final notificationService = NotificationService();
   await notificationService.initialize();
   
-  final authService = EarthdataAuthService();
-  await authService.initialize();
-  
-  runApp(NasaGnssApp(authService: authService));
+  runApp(const NasaGnssApp());
 }
 
 class NasaGnssApp extends StatelessWidget {
-  final EarthdataAuthService authService;
-  
-  const NasaGnssApp({super.key, required this.authService});
+  const NasaGnssApp({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -48,6 +40,12 @@ class NasaGnssApp extends StatelessWidget {
         ),
         ChangeNotifierProvider(
           create: (_) => GnssProvider()..initialize(),
+        ),
+        ChangeNotifierProvider(
+          create: (_) => RealtimeProvider(),
+        ),
+        ChangeNotifierProvider(
+          create: (_) => OfflineProvider()..initialize(),
         ),
       ],
       child: Consumer<ThemeProvider>(
@@ -60,19 +58,7 @@ class NasaGnssApp extends StatelessWidget {
             themeMode: themeProvider.isDarkMode ? ThemeMode.dark : ThemeMode.light,
             home: const SplashScreen(),
             routes: {
-              '/login': (context) => const LoginScreen(),
-              '/home': (context) => const HomeScreen(),
-              '/ntrip-config': (context) => const NtripConfigScreen(),
-              '/ntrip-connect': (context) => const NtripConnectScreen(),
-            },
-            onGenerateRoute: (settings) {
-              if (settings.name == '/station-details') {
-                final station = settings.arguments as GnssStation;
-                return MaterialPageRoute(
-                  builder: (context) => StationDetailsScreen(station: station),
-                );
-              }
-              return null;
+              '/main': (context) => const MainNavigationScreen(),
             },
           );
         },
@@ -138,13 +124,8 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
     await Future.delayed(const Duration(seconds: 3));
     
     if (mounted) {
-      // Check if user is authenticated
-      final authService = EarthdataAuthService();
-      if (authService.isAuthenticated) {
-        Navigator.pushReplacementNamed(context, '/home');
-      } else {
-        Navigator.pushReplacementNamed(context, '/login');
-      }
+      // Go directly to main screen - authentication is handled per-tab
+      Navigator.pushReplacementNamed(context, '/main');
     }
   }
 
