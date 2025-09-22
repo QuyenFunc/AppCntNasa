@@ -18,9 +18,10 @@ class EarthdataAuthService {
   static const String profileUrl = '$baseUrl/api/users/user';
   
   // Client credentials for NASA GNSS Client
-  // Note: In production, these should be stored securely
-  static const String clientId = 'your_nasa_client_id';
-  static const String clientSecret = 'your_nasa_client_secret';
+  // Note: In production, these should be stored securely and obtained from NASA
+  // These are placeholder values - users need to register with NASA Earthdata
+  static const String clientId = 'NASA_GNSS_CLIENT_ID';
+  static const String clientSecret = 'NASA_GNSS_CLIENT_SECRET';
   static const String redirectUri = 'com.example.nasa_gnss_client://oauth';
   
   // Authentication state
@@ -168,33 +169,10 @@ class EarthdataAuthService {
     try {
       debugPrint('Attempting to login to NASA Earthdata...');
       
-      // For demo purposes, simulate successful login
-      // Real implementation would use proper OAuth2 flow
-      if (username.isNotEmpty && password.isNotEmpty) {
-        // Simulate successful authentication
-        _accessToken = 'demo_access_token_${DateTime.now().millisecondsSinceEpoch}';
-        _refreshToken = 'demo_refresh_token_${DateTime.now().millisecondsSinceEpoch}';
-        _tokenExpiry = DateTime.now().add(const Duration(hours: 1));
-        _isAuthenticated = true;
-        
-        // Set demo user profile
-        _userProfile = {
-          'uid': username,
-          'first_name': 'Demo',
-          'last_name': 'User',
-          'email': '$username@demo.nasa.gov',
-        };
-        
-        // Save credentials
-        await _saveCredentials();
-        
-        _authStateController.add(true);
-        debugPrint('Demo login successful for user: $username');
-        
-        return true;
+      if (username.isEmpty || password.isEmpty) {
+        throw Exception('Username and password are required');
       }
       
-      // If empty credentials, attempt real API call
       final response = await http.post(
         Uri.parse(tokenUrl),
         headers: {
@@ -207,7 +185,7 @@ class EarthdataAuthService {
           'password': password,
           'scope': 'read',
         },
-      );
+      ).timeout(const Duration(seconds: 30));
       
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
@@ -243,11 +221,10 @@ class EarthdataAuthService {
         
         try {
           final errorData = json.decode(response.body);
-          debugPrint('Login failed: ${errorData['error_description'] ?? 'Unknown error'}');
+          throw Exception('Login failed: ${errorData['error_description'] ?? 'Unknown error'}');
         } catch (e) {
-          debugPrint('Login failed: HTTP ${response.statusCode}');
+          throw Exception('Login failed: HTTP ${response.statusCode}');
         }
-        return false;
       }
       
     } catch (e) {
@@ -313,17 +290,27 @@ class EarthdataAuthService {
           'Authorization': 'Bearer $_accessToken',
           'Accept': 'application/json',
         },
-      );
+      ).timeout(const Duration(seconds: 10));
       
       if (response.statusCode == 200) {
         _userProfile = json.decode(response.body);
         debugPrint('User profile loaded: ${_userProfile?['first_name']} ${_userProfile?['last_name']}');
+      } else if (response.statusCode == 401) {
+        debugPrint('Failed to load user profile: 401 - Token rejected by NASA server');
+        debugPrint('Token may be expired or invalid. Please login again.');
+        // Clear invalid token
+        _accessToken = null;
+        _isAuthenticated = false;
+        _authStateController.add(false);
       } else {
-        debugPrint('Failed to load user profile: ${response.statusCode}');
+        debugPrint('Failed to load user profile: ${response.statusCode} - ${response.reasonPhrase}');
       }
       
     } catch (e) {
       debugPrint('Error loading user profile: $e');
+      if (e.toString().contains('TimeoutException')) {
+        debugPrint('Request timed out - NASA servers may be unavailable');
+      }
     }
   }
   
@@ -387,9 +374,21 @@ class EarthdataAuthService {
   
   // Check if user has required permissions for GNSS data
   Future<bool> hasGnssDataPermissions() async {
-    // This would typically check user's permissions/subscriptions
-    // For now, assume all authenticated users have access
-    return _isAuthenticated;
+    if (!_isAuthenticated) return false;
+    
+    try {
+      // Check user profile for GNSS data access permissions
+      if (_userProfile == null) {
+        await _loadUserProfile();
+      }
+      
+      // In real implementation, this would check specific permissions
+      // For now, require valid authentication and profile
+      return _isAuthenticated && _userProfile != null;
+    } catch (e) {
+      debugPrint('Error checking GNSS permissions: $e');
+      return false;
+    }
   }
   
   // Get authentication status info

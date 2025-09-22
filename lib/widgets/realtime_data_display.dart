@@ -438,7 +438,7 @@ class _RealtimeDataDisplayState extends State<RealtimeDataDisplay> {
               Text(
                 _connectionStatus.contains('Connected') 
                     ? 'Connected to NASA CDDIS - waiting for real RTCM data...'
-                    : 'Login with JWT token → Auto-connect to NASA CDDIS for real data',
+                    : 'Need VALID JWT token from NASA Earthdata to access real CDDIS data',
                 style: TextStyle(
                   fontSize: 12,
                   color: Colors.grey[500],

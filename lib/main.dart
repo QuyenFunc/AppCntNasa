@@ -9,6 +9,7 @@ import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/station_details_screen.dart';
 import 'screens/ntrip_config_screen.dart';
+import 'screens/ntrip_connect_screen.dart';
 import 'models/gnss_station.dart';
 import 'services/database_service.dart';
 import 'services/notification_service.dart';
@@ -62,6 +63,7 @@ class NasaGnssApp extends StatelessWidget {
               '/login': (context) => const LoginScreen(),
               '/home': (context) => const HomeScreen(),
               '/ntrip-config': (context) => const NtripConfigScreen(),
+              '/ntrip-connect': (context) => const NtripConnectScreen(),
             },
             onGenerateRoute: (settings) {
               if (settings.name == '/station-details') {

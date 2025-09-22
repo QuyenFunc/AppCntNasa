@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/earthdata_auth_service.dart';
-import '../services/nasa_real_data_service.dart';
 import '../providers/gnss_provider.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -31,7 +30,8 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   int _getRealStationCount() {
-    return NasaRealDataService().totalStationsCount;
+    // Since we removed mock data, return 0 - real count will be fetched after login
+    return 0;
   }
 
   Future<void> _login() async {
@@ -79,7 +79,7 @@ class _LoginScreenState extends State<LoginScreen> {
       } else {
         setState(() {
           if (_useJwtToken) {
-            _errorMessage = 'Invalid or expired JWT token. Please check your token.';
+            _errorMessage = 'JWT token is INVALID or EXPIRED! Get a new token from NASA Earthdata Login.';
           } else {
             _errorMessage = 'Invalid username or password. Please check your NASA Earthdata credentials.';
           }
@@ -224,7 +224,7 @@ class _LoginScreenState extends State<LoginScreen> {
                               ),
                               filled: true,
                               fillColor: Colors.grey[50],
-                              helperText: 'Paste your NASA Earthdata JWT token',
+                              helperText: 'Get your valid JWT token from NASA Earthdata Login',
                               helperMaxLines: 2,
                             ),
                             validator: (value) {
@@ -300,26 +300,6 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                         ],
                         
-                        // Quick JWT token paste button
-                        if (_useJwtToken) ...[
-                          const SizedBox(height: 16),
-                          OutlinedButton.icon(
-                            onPressed: () {
-                              // Pre-fill with the provided JWT token for quick testing
-                              _jwtTokenController.text = 'eyJ0eXAiOiJKV1QiLCJvcmlnaW4iOiJFYXJ0aGRhdGEgTG9naW4iLCJzaWciOiJlZGxqd3RwdWJrZXlfb3BzIiwiYWxnIjoiUlMyNTYifQ.eyJ0eXBlIjoiVXNlciIsInVpZCI6InF1eWVuZnVuYyIsImV4cCI6MTc2Mzc2OTU5OSwiaWF0IjoxNzU4NTM0MDg0LCJpc3MiOiJodHRwczovL3Vycy5lYXJ0aGRhdGEubmFzYS5nb3YiLCJpZGVudGl0eV9wcm92aWRlciI6ImVkbF9vcHMiLCJhY3IiOiJlZGwiLCJhc3N1cmFuY2VfbGV2ZWwiOjN9.IsqZWwdcxf8NyQEJ238smiXscqaWZoG1ieYqig6vjyj7Gqnp2vipg3H08TEb1xIzqnmbGYNNiZ4QCy3fBHkqn6QZ4wM5WX3_bSv4JhG0ZNdkCxT10bB4B7igpjnCMsM6Z3RDxpj78ZA0RHeEX3HbaTFV9KeS1OWPgp7Vg6lbmRZ6yPpu8z_FY0w3VmfRkdEwQ9fLjzLwSlxHdwaYH_rBD25PWFJ0CjnqsmvJo4uMAUkDnLVYKGnruum4-LuYlXlS1Lz3m-JzsUBfcwqv4tin5Ge_tzFp42cbjXHsZaaiIYimNhFzAH2RAFCsWV80RvuZK923yYq-Et41kLJQKmGdGg';
-                              setState(() {
-                                _errorMessage = null;
-                              });
-                            },
-                            icon: const Icon(Icons.paste),
-                            label: const Text('Use Your Token'),
-                            style: OutlinedButton.styleFrom(
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                            ),
-                          ),
-                        ],
                         
                         const SizedBox(height: 24),
                         
@@ -402,7 +382,7 @@ class _LoginScreenState extends State<LoginScreen> {
                               const SizedBox(width: 8),
                               Expanded(
                                 child: Text(
-                                  'Login will automatically connect to NASA CDDIS for real-time GNSS data',
+                                  'You need a VALID JWT token from NASA Earthdata to access real CDDIS data',
                                   style: TextStyle(
                                     color: Colors.blue[700],
                                     fontSize: 12,
@@ -424,14 +404,20 @@ class _LoginScreenState extends State<LoginScreen> {
                         
                         TextButton(
                           onPressed: () {
-                            // Open registration URL
-                            // In a real app, you'd use url_launcher
                             showDialog(
                               context: context,
                               builder: (context) => AlertDialog(
-                                title: const Text('Create Account'),
+                                title: const Text('Get Valid Bearer Token'),
                                 content: const Text(
-                                  'Visit https://urs.earthdata.nasa.gov/users/new to create a free NASA Earthdata account.',
+                                  'To get a VALID Bearer token:\n\n'
+                                  '1. Go to https://urs.earthdata.nasa.gov/\n'
+                                  '2. Login to your account\n'
+                                  '3. Go to Profile > Applications\n'
+                                  '4. Generate Token\n'
+                                  '5. Copy the Bearer token\n'
+                                  '6. Paste it in the JWT field above\n\n'
+                                  'Note: Username/password login uses Basic Auth which is rejected (401 error)!\n'
+                                  'You MUST use Bearer token for NASA CMR API.',
                                 ),
                                 actions: [
                                   TextButton(
@@ -443,10 +429,25 @@ class _LoginScreenState extends State<LoginScreen> {
                             );
                           },
                           child: const Text(
-                            'Create free account',
+                            'How to get Bearer token?',
                             style: TextStyle(
                               fontWeight: FontWeight.w600,
                             ),
+                          ),
+                        ),
+                        
+                        const SizedBox(height: 8),
+                        
+                        // NTRIP Test Button
+                        TextButton.icon(
+                          onPressed: () {
+                            Navigator.pushNamed(context, '/ntrip-connect');
+                          },
+                          icon: const Icon(Icons.satellite_alt),
+                          label: const Text('Test NTRIP Connection'),
+                          style: TextButton.styleFrom(
+                            foregroundColor: Colors.orange,
+                            backgroundColor: Colors.orange.withOpacity(0.1),
                           ),
                         ),
                         

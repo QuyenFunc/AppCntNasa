@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import '../models/gnss_station.dart';
 import 'database_service.dart';
 import 'notification_service.dart';
+import 'earthdata_auth_service.dart';
 
 class NtripClientService {
   static final NtripClientService _instance = NtripClientService._internal();
@@ -21,6 +22,7 @@ class NtripClientService {
   
   final DatabaseService _databaseService = DatabaseService();
   final NotificationService _notificationService = NotificationService();
+  final EarthdataAuthService _authService = EarthdataAuthService();
   
   // Connection state
   bool _isConnected = false;
@@ -63,8 +65,8 @@ class NtripClientService {
   
   // Connect to NASA CDDIS NTRIP Caster
   Future<bool> connect({
-    required String username,
-    required String password,
+    String? username,
+    String? password,
     String mountPoint = 'RTCM3EPH',
   }) async {
     if (_isConnecting || _isConnected) {
@@ -76,10 +78,29 @@ class NtripClientService {
     _connectionStatusController.add('Connecting to NASA CDDIS...');
     
     try {
+      // Get credentials from auth service if not provided
+      String finalUsername = username ?? '';
+      String finalPassword = password ?? '';
+      
+      if (finalUsername.isEmpty || finalPassword.isEmpty) {
+        final credentials = await _authService.getNtripCredentials();
+        if (credentials != null) {
+          finalUsername = credentials['username'] ?? '';
+          finalPassword = credentials['password'] ?? '';
+          debugPrint('Using NASA Earthdata credentials for NTRIP');
+        } else {
+          throw Exception('No valid NASA Earthdata credentials available. Please login first.');
+        }
+      }
+      
+      if (finalUsername.isEmpty || finalPassword.isEmpty) {
+        throw Exception('Invalid credentials provided');
+      }
+      
       // Preflight: fetch sourcetable to ensure credentials are accepted
-      final ok = await _preflightAuthorize(username, password);
+      final ok = await _preflightAuthorize(finalUsername, finalPassword);
       if (!ok) {
-        throw Exception('Authentication failed during preflight');
+        throw Exception('Authentication failed during preflight - NASA Earthdata credentials rejected');
       }
       // Establish raw TLS socket (avoids HTTP/2 upgrades)
       _socket = await SecureSocket.connect(
@@ -90,7 +111,7 @@ class NtripClientService {
       );
 
       // Build NTRIP GET request (NASA docs recommend these headers)
-      final credentials = base64.encode(utf8.encode('$username:$password'));
+      final credentials = base64.encode(utf8.encode('$finalUsername:$finalPassword'));
       final request = StringBuffer()
         ..write('GET /$mountPoint HTTP/1.1\r\n')
         ..write('Host: $_host\r\n')
@@ -568,6 +589,17 @@ class NtripClientService {
     return 35.0 + (data[1] % 25); // 35-60 dB
   }
   
+  // Connect using NASA Earthdata authentication
+  Future<bool> connectWithEarthdataAuth({String mountPoint = 'RTCM3EPH'}) async {
+    if (!_authService.isAuthenticated) {
+      _connectionStatusController.add('NASA Earthdata authentication required');
+      debugPrint('Cannot connect to NTRIP: Not authenticated with NASA Earthdata');
+      return false;
+    }
+    
+    return await connect(mountPoint: mountPoint);
+  }
+
   // Get list of available mount points from NASA CDDIS
   Future<List<String>> getAvailableMountPoints() async {
     try {

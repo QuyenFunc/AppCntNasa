@@ -60,60 +60,39 @@ class StationSelector extends StatelessWidget {
             items: stations.map((station) {
               return DropdownMenuItem<GnssStation>(
                 value: station,
-                child: Row(
-                  children: [
-                    // Status indicator
-                    Container(
-                      width: 12,
-                      height: 12,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: station.isAccurate ? Colors.green : Colors.red,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    // Station name and ID
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            station.name,
-                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              fontWeight: FontWeight.w500,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          Text(
-                            station.id,
-                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: Colors.grey[600],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    // Accuracy indicator
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: station.isAccurate 
-                            ? Colors.green.withOpacity(0.1)
-                            : Colors.red.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Text(
-                        station.accuracyString,
-                        style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
+                child: SizedBox(
+                  width: double.infinity,
+                  child: Row(
+                    children: [
+                      // Status indicator
+                      Container(
+                        width: 8,
+                        height: 8,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
                           color: station.isAccurate ? Colors.green : Colors.red,
                         ),
                       ),
-                    ),
-                  ],
+                      const SizedBox(width: 8),
+                      // Station name and ID
+                      Expanded(
+                        child: Text(
+                          '${station.name} (${station.id})',
+                          style: Theme.of(context).textTheme.bodySmall,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      // Accuracy indicator
+                      Text(
+                        station.accuracyString,
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: station.isAccurate ? Colors.green : Colors.red,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               );
             }).toList(),
@@ -137,7 +116,7 @@ class StationSelector extends StatelessWidget {
     if (selectedStation == null) return const SizedBox.shrink();
 
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(
         color: selectedStation!.isAccurate 
             ? Colors.green.withOpacity(0.1)
@@ -149,115 +128,54 @@ class StationSelector extends StatelessWidget {
               : Colors.red.withOpacity(0.3),
         ),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
-            Icons.info_outline,
-            size: 16,
-            color: selectedStation!.isAccurate ? Colors.green : Colors.red,
+          Row(
+            children: [
+              Icon(
+                Icons.info_outline,
+                size: 14,
+                color: selectedStation!.isAccurate ? Colors.green : Colors.red,
+              ),
+              const SizedBox(width: 4),
+              Expanded(
+                child: Text(
+                  selectedStation!.coordinatesString,
+                  style: const TextStyle(fontSize: 11),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              Text(
+                selectedStation!.accuracyString,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: selectedStation!.isAccurate ? Colors.green : Colors.red,
+                ),
+              ),
+            ],
           ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+          if (selectedStation!.satelliteCount != null) ...[
+            const SizedBox(height: 4),
+            Row(
               children: [
-                Row(
-                  children: [
-                    Text(
-                      'Coordinates: ',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey[600],
-                      ),
-                    ),
-                    Text(
-                      selectedStation!.coordinatesString,
-                      style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
+                Text(
+                  'Sats: ${selectedStation!.satelliteCount}',
+                  style: const TextStyle(fontSize: 10),
                 ),
-                const SizedBox(height: 2),
-                Row(
-                  children: [
-                    Text(
-                      'Current Accuracy: ',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey[600],
-                      ),
-                    ),
-                    Text(
-                      selectedStation!.accuracyString,
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: selectedStation!.isAccurate ? Colors.green : Colors.red,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                      decoration: BoxDecoration(
-                        color: selectedStation!.isAccurate 
-                            ? Colors.green
-                            : Colors.red,
-                        borderRadius: BorderRadius.circular(3),
-                      ),
-                      child: Text(
-                        selectedStation!.isAccurate ? 'OK' : 'WARNING',
-                        style: const TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                if (selectedStation!.satelliteCount != null) ...[
-                  const SizedBox(height: 2),
-                  Row(
-                    children: [
-                      Text(
-                        'Satellites: ',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey[600],
-                        ),
-                      ),
-                      Text(
-                        '${selectedStation!.satelliteCount}',
-                        style: const TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      if (selectedStation!.signalStrength != null) ...[
-                        const SizedBox(width: 16),
-                        Text(
-                          'Signal: ',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey[600],
-                          ),
-                        ),
-                        Text(
-                          '${selectedStation!.signalStrength!.toStringAsFixed(1)} dB',
-                          style: const TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ],
-                    ],
+                if (selectedStation!.signalStrength != null) ...[
+                  const SizedBox(width: 8),
+                  Text(
+                    'Signal: ${selectedStation!.signalStrength!.toStringAsFixed(1)}dB',
+                    style: const TextStyle(fontSize: 10),
                   ),
                 ],
               ],
             ),
-          ),
+          ],
         ],
       ),
     );
