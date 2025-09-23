@@ -86,91 +86,262 @@ class ThemeProvider with ChangeNotifier {
     );
   }
 
-  // Get light theme
+  // Get light theme - Material 3 Enhanced
   ThemeData get lightTheme {
+    final colorScheme = ColorScheme.fromSeed(
+      seedColor: _primaryColor,
+      brightness: Brightness.light,
+    );
+    
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.light,
-      colorScheme: ColorScheme.fromSeed(
-        seedColor: _primaryColor,
-        brightness: Brightness.light,
-      ),
-      appBarTheme: const AppBarTheme(
+      colorScheme: colorScheme,
+      
+      // AppBar Theme
+      appBarTheme: AppBarTheme(
         elevation: 0,
         centerTitle: true,
-        backgroundColor: Colors.transparent,
-        foregroundColor: Colors.black,
-      ),
-      cardTheme: CardThemeData(
-        elevation: 2,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
+        backgroundColor: colorScheme.surface,
+        foregroundColor: colorScheme.onSurface,
+        surfaceTintColor: colorScheme.surfaceTint,
+        titleTextStyle: TextStyle(
+          fontSize: 20,
+          fontWeight: FontWeight.w500,
+          color: colorScheme.onSurface,
         ),
       ),
+      
+      // Card Theme
+      cardTheme: CardThemeData(
+        elevation: 1,
+        surfaceTintColor: colorScheme.surfaceTint,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        clipBehavior: Clip.antiAlias,
+      ),
+      
+      // Button Themes
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
-          elevation: 2,
+          elevation: 1,
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(20),
           ),
         ),
       ),
-      bottomNavigationBarTheme: const BottomNavigationBarThemeData(
-        elevation: 8,
-        type: BottomNavigationBarType.fixed,
+      
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+        ),
       ),
+      
+      // Navigation Theme
+      bottomNavigationBarTheme: BottomNavigationBarThemeData(
+        elevation: 3,
+        type: BottomNavigationBarType.fixed,
+        backgroundColor: colorScheme.surface,
+        selectedItemColor: colorScheme.primary,
+        unselectedItemColor: colorScheme.onSurfaceVariant,
+        selectedLabelStyle: const TextStyle(fontWeight: FontWeight.w600),
+      ),
+      
+      navigationBarTheme: NavigationBarThemeData(
+        elevation: 3,
+        backgroundColor: colorScheme.surface,
+        indicatorColor: colorScheme.secondaryContainer,
+        labelTextStyle: MaterialStateProperty.resolveWith((states) {
+          if (states.contains(MaterialState.selected)) {
+            return TextStyle(color: colorScheme.onSecondaryContainer, fontWeight: FontWeight.w600);
+          }
+          return TextStyle(color: colorScheme.onSurfaceVariant);
+        }),
+      ),
+      
+      // Input Theme
       inputDecorationTheme: InputDecorationTheme(
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(12),
         ),
         filled: true,
-        fillColor: Colors.grey[50],
+        fillColor: colorScheme.surfaceVariant.withOpacity(0.3),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      ),
+      
+      // FAB Theme
+      floatingActionButtonTheme: FloatingActionButtonThemeData(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        elevation: 3,
+        backgroundColor: colorScheme.primaryContainer,
+        foregroundColor: colorScheme.onPrimaryContainer,
+      ),
+      
+      // Chip Theme
+      chipTheme: ChipThemeData(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+        backgroundColor: colorScheme.surfaceVariant,
+        labelStyle: TextStyle(color: colorScheme.onSurfaceVariant),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      ),
+      
+      // Dialog Theme
+      dialogTheme: DialogThemeData(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+        elevation: 6,
+        backgroundColor: colorScheme.surface,
+        surfaceTintColor: colorScheme.surfaceTint,
+      ),
+      
+      // BottomSheet Theme
+      bottomSheetTheme: BottomSheetThemeData(
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        backgroundColor: colorScheme.surface,
+        surfaceTintColor: colorScheme.surfaceTint,
+        elevation: 8,
       ),
     );
   }
 
-  // Get dark theme
+  // Get dark theme - Material 3 Enhanced
   ThemeData get darkTheme {
+    final colorScheme = ColorScheme.fromSeed(
+      seedColor: _primaryColor,
+      brightness: Brightness.dark,
+    );
+    
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.dark,
-      colorScheme: ColorScheme.fromSeed(
-        seedColor: _primaryColor,
-        brightness: Brightness.dark,
-      ),
-      scaffoldBackgroundColor: const Color(0xFF121212),
-      appBarTheme: const AppBarTheme(
+      colorScheme: colorScheme,
+      
+      // AppBar Theme
+      appBarTheme: AppBarTheme(
         elevation: 0,
         centerTitle: true,
-        backgroundColor: Colors.transparent,
-        foregroundColor: Colors.white,
-      ),
-      cardTheme: CardThemeData(
-        elevation: 4,
-        color: const Color(0xFF1E1E1E),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
+        backgroundColor: colorScheme.surface,
+        foregroundColor: colorScheme.onSurface,
+        surfaceTintColor: colorScheme.surfaceTint,
+        titleTextStyle: TextStyle(
+          fontSize: 20,
+          fontWeight: FontWeight.w500,
+          color: colorScheme.onSurface,
         ),
       ),
+      
+      // Card Theme
+      cardTheme: CardThemeData(
+        elevation: 2,
+        surfaceTintColor: colorScheme.surfaceTint,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        clipBehavior: Clip.antiAlias,
+      ),
+      
+      // Button Themes
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
-          elevation: 2,
+          elevation: 1,
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(20),
           ),
         ),
       ),
-      bottomNavigationBarTheme: const BottomNavigationBarThemeData(
-        elevation: 8,
-        type: BottomNavigationBarType.fixed,
-        backgroundColor: Color(0xFF1E1E1E),
+      
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+        ),
       ),
+      
+      // Navigation Theme
+      bottomNavigationBarTheme: BottomNavigationBarThemeData(
+        elevation: 3,
+        type: BottomNavigationBarType.fixed,
+        backgroundColor: colorScheme.surface,
+        selectedItemColor: colorScheme.primary,
+        unselectedItemColor: colorScheme.onSurfaceVariant,
+        selectedLabelStyle: const TextStyle(fontWeight: FontWeight.w600),
+      ),
+      
+      navigationBarTheme: NavigationBarThemeData(
+        elevation: 3,
+        backgroundColor: colorScheme.surface,
+        indicatorColor: colorScheme.secondaryContainer,
+        labelTextStyle: MaterialStateProperty.resolveWith((states) {
+          if (states.contains(MaterialState.selected)) {
+            return TextStyle(color: colorScheme.onSecondaryContainer, fontWeight: FontWeight.w600);
+          }
+          return TextStyle(color: colorScheme.onSurfaceVariant);
+        }),
+      ),
+      
+      // Input Theme
       inputDecorationTheme: InputDecorationTheme(
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(12),
         ),
         filled: true,
-        fillColor: const Color(0xFF2A2A2A),
+        fillColor: colorScheme.surfaceVariant.withOpacity(0.3),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      ),
+      
+      // FAB Theme
+      floatingActionButtonTheme: FloatingActionButtonThemeData(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        elevation: 3,
+        backgroundColor: colorScheme.primaryContainer,
+        foregroundColor: colorScheme.onPrimaryContainer,
+      ),
+      
+      // Chip Theme
+      chipTheme: ChipThemeData(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+        backgroundColor: colorScheme.surfaceVariant,
+        labelStyle: TextStyle(color: colorScheme.onSurfaceVariant),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      ),
+      
+      // Dialog Theme
+      dialogTheme: DialogThemeData(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+        elevation: 6,
+        backgroundColor: colorScheme.surface,
+        surfaceTintColor: colorScheme.surfaceTint,
+      ),
+      
+      // BottomSheet Theme
+      bottomSheetTheme: BottomSheetThemeData(
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        backgroundColor: colorScheme.surface,
+        surfaceTintColor: colorScheme.surfaceTint,
+        elevation: 8,
       ),
     );
   }

@@ -70,13 +70,16 @@ class RealtimeProvider with ChangeNotifier {
       );
 
       print('📡 Attempting NTRIP connection...');
-      await _ntripClient!.connect();
-      print('✅ NTRIP connection established!');
-
-      // Listen to stats stream with error handling
+      
+      // Set up error handling BEFORE connecting
+      bool connectionSuccessful = false;
+      
       _ntripClient!.statsStream.listen(
         (stats) {
-          _updateStreamStats(stats);
+          // Only update stats if connection was successful
+          if (_isConnected) {
+            _updateStreamStats(stats);
+          }
         },
         onError: (error) {
           print('❌ NTRIP connection error: $error');
@@ -108,21 +111,34 @@ class RealtimeProvider with ChangeNotifier {
         },
       );
 
-      // Listen to raw data stream (optional error handling to avoid unhandled errors)
+      // Listen to raw data stream (only process if connected)
       _ntripClient!.rawDataStream.listen(
         (data) {
-          _updateStationFromRtcmData(data, mountpoint);
+          if (_isConnected) {
+            _updateStationFromRtcmData(data, mountpoint);
+          }
         },
         onError: (_) {
           // No-op: statsStream already reports connection errors
         },
       );
 
-      _isConnected = true;
-      _isConnecting = false;
-      _connectionStatus = 'Connected';
-      print('🎉 NTRIP connection successful! Status: $_connectionStatus');
-      notifyListeners();
+      // Now attempt connection
+      await _ntripClient!.connect();
+      
+      // Wait a bit to see if we get an error
+      await Future.delayed(const Duration(milliseconds: 500));
+      
+      // Only set connected if no error occurred
+      if (_ntripClient!.isConnected && !connectionSuccessful) {
+        _isConnected = true;
+        _isConnecting = false;
+        _connectionStatus = 'Connected';
+        connectionSuccessful = true;
+        print('✅ NTRIP connection established!');
+        print('🎉 NTRIP connection successful! Status: $_connectionStatus');
+        notifyListeners();
+      }
 
     } catch (e) {
       print('💥 NTRIP connection exception: $e');

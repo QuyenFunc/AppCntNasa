@@ -18,6 +18,19 @@ A beautiful and feature-rich Flutter application for monitoring NASA GNSS (Globa
 - **Dark Mode**: Beautiful dark/light theme with custom color options
 - **Performance Optimized**: Efficient data handling and smooth animations
 
+### NASA Earthdata Tools Integration
+- **NASA Worldview**: Interactive satellite imagery viewer with GIBS integration
+  - Access to 6+ satellite layers (MODIS, VIIRS, thermal anomalies)
+  - Date-based imagery browsing with layer opacity controls
+  - Fire detection layers for environmental monitoring
+  - Real-time satellite data visualization
+- **NASA FIRMS**: Fire Information for Resource Management System
+  - Real-time active fire detection and monitoring
+  - Multiple satellite data sources (VIIRS SNPP, VIIRS NOAA-20, MODIS)
+  - Fire intensity classification and confidence levels
+  - Statistical analysis and fire data export
+  - Interactive fire mapping with detailed fire information
+
 ### User Experience
 - **Modern UI**: Material Design 3 with smooth animations and transitions
 - **Responsive Design**: Optimized for phones, tablets, and web
@@ -44,6 +57,22 @@ A beautiful and feature-rich Flutter application for monitoring NASA GNSS (Globa
 - Signal strength monitoring
 - Statistical analysis with averages and trends
 - Customizable time ranges (1H, 6H, 24H, 3D, 1W, 1M)
+
+### NASA Worldview Satellite Imagery
+- Interactive satellite layer control panel
+- MODIS Terra/Aqua true color and false color imagery
+- VIIRS SNPP high-resolution satellite data
+- Thermal anomaly detection layers
+- Date-based historical imagery browsing
+- Layer opacity and visibility controls
+
+### NASA FIRMS Fire Monitoring
+- Real-time active fire detection markers
+- Fire intensity visualization (low, moderate, high, extreme)
+- Confidence level indicators (low, nominal, high)
+- Detailed fire information popups with acquisition data
+- Fire statistics dashboard with comprehensive analytics
+- Multiple satellite instrument support
 
 ### Settings
 - Dark/light theme toggle

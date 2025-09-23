@@ -11,11 +11,11 @@ class NtripConnectionPanel extends StatefulWidget {
 }
 
 class _NtripConnectionPanelState extends State<NtripConnectionPanel> {
-  final _hostController = TextEditingController(text: 'rtk2go.com');
-  final _portController = TextEditingController(text: '2101');
-  final _mountpointController = TextEditingController(text: 'VTEC_Raspi');
-  final _usernameController = TextEditingController(text: '');
-  final _passwordController = TextEditingController(text: '');
+  final _hostController = TextEditingController();
+  final _portController = TextEditingController();
+  final _mountpointController = TextEditingController();
+  final _usernameController = TextEditingController();
+  final _passwordController = TextEditingController();
   
   bool _isExpanded = false;
   String _selectedCaster = 'RTK2GO (Public)';
@@ -40,7 +40,7 @@ class _NtripConnectionPanelState extends State<NtripConnectionPanel> {
       'port': 2101,
       'username': 'dazzling_stallman',
       'password': 'YP8Ae9Bb45cV0yOf',
-      'mountpoints': ['UNAVCO_RTCM3', 'SIO_RTCM3', 'CRTN00USA0', 'MSM5'],
+      'mountpoints': ['P041_RTCM3', 'P042_RTCM3', 'P043_RTCM3', 'P044_RTCM3', 'P045_RTCM3'],
     },
     'RTK2GO (Public)': {
       'host': 'rtk2go.com',
@@ -64,6 +64,26 @@ class _NtripConnectionPanelState extends State<NtripConnectionPanel> {
       'mountpoints': ['FFMJ1', 'BRUX0', 'ONSA0', 'WTZR0'],
     },
   };
+
+  @override
+  void initState() {
+    super.initState();
+    // Initialize with default caster configuration
+    _initializeDefaultCaster();
+  }
+
+  void _initializeDefaultCaster() {
+    final config = _casters[_selectedCaster]!;
+    _hostController.text = config['host'];
+    _portController.text = config['port'].toString();
+    _usernameController.text = config['username'];
+    _passwordController.text = config['password'];
+    // Set first mountpoint as default
+    if ((config['mountpoints'] as List).isNotEmpty) {
+      _mountpointController.text = config['mountpoints'][0];
+    }
+    print('🔧 Initialized with caster: $_selectedCaster, mountpoint: ${_mountpointController.text}');
+  }
 
   @override
   void dispose() {
@@ -401,6 +421,17 @@ class _NtripConnectionPanelState extends State<NtripConnectionPanel> {
     }
     
     try {
+      // Validate mountpoint exists for EarthScope
+      if (_selectedCaster == 'EarthScope') {
+        print('🔍 Validating mountpoint $mountpoint on EarthScope...');
+        final isValidMountpoint = await _validateMountpoint(host, port, username, password, mountpoint);
+        if (!isValidMountpoint) {
+          _showError('Mountpoint "$mountpoint" not found on EarthScope.\nPlease use "Get Sourcetable" to see available mountpoints.');
+          return;
+        }
+        print('✅ Mountpoint $mountpoint is valid on EarthScope');
+      }
+      
       // Show connecting message
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -524,6 +555,31 @@ class _NtripConnectionPanelState extends State<NtripConnectionPanel> {
           SnackBar(content: Text('Failed to get sourcetable: $e')),
         );
       }
+    }
+  }
+
+  Future<bool> _validateMountpoint(String host, int port, String username, String password, String mountpoint) async {
+    try {
+      final sourcetable = await NtripClient.getSourcetable(
+        host: host,
+        port: port,
+        username: username,
+        password: password,
+        useTls: port == 443,
+      );
+      
+      // Check if mountpoint exists in sourcetable
+      final lines = sourcetable.split('\n');
+      for (final line in lines) {
+        if (line.startsWith('STR;') && line.contains(';$mountpoint;')) {
+          return true;
+        }
+      }
+      return false;
+    } catch (e) {
+      print('⚠️ Could not validate mountpoint: $e');
+      // If we can't get sourcetable, allow connection attempt
+      return true;
     }
   }
 
