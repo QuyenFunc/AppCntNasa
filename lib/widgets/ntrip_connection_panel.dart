@@ -40,7 +40,7 @@ class _NtripConnectionPanelState extends State<NtripConnectionPanel> {
       'port': 2101,
       'username': 'dazzling_stallman',
       'password': 'YP8Ae9Bb45cV0yOf',
-      'mountpoints': ['P041_RTCM3', 'P042_RTCM3', 'P043_RTCM3', 'P044_RTCM3', 'P045_RTCM3'],
+      'mountpoints': ['7ODM_RTCM3P3', 'AB07_RTCM3P3', 'AB11_RTCM3P3', 'ACHO_RTCM3P3', 'ACSB_RTCM3P3', 'ACSO_RTCM3P3'],
     },
     'RTK2GO (Public)': {
       'host': 'rtk2go.com',

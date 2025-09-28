@@ -26,10 +26,44 @@ class WorldviewService {
 
   WorldviewService._internal() {
     _dio = Dio(BaseOptions(
-      connectTimeout: const Duration(seconds: 15),
-      receiveTimeout: const Duration(seconds: 30),
+      connectTimeout: const Duration(seconds: 30), // Increased for WiFi
+      receiveTimeout: const Duration(seconds: 60), // Increased for WiFi
+      sendTimeout: const Duration(seconds: 30),
       headers: {
         'User-Agent': 'NASA_GNSS_Client/1.0',
+        'Accept': 'application/xml,text/xml,*/*',
+        'Accept-Encoding': 'gzip, deflate',
+        'Connection': 'keep-alive',
+      },
+      followRedirects: true,
+      maxRedirects: 5,
+    ));
+
+    // Custom retry interceptor for WiFi/mobile data instability
+    _dio.interceptors.add(InterceptorsWrapper(
+      onError: (error, handler) async {
+        if (_shouldRetry(error) && error.requestOptions.extra['retryCount'] == null) {
+          error.requestOptions.extra['retryCount'] = 0;
+        }
+        
+        final retryCount = error.requestOptions.extra['retryCount'] as int? ?? 0;
+        if (retryCount < 5 && _shouldRetry(error)) {
+          debugPrint('[Worldview Retry] Attempt ${retryCount + 1}/5 - ${error.message}');
+          error.requestOptions.extra['retryCount'] = retryCount + 1;
+          
+          // Progressive delay for mobile data
+          final delay = Duration(seconds: (retryCount + 1) * 2);
+          await Future.delayed(delay);
+          
+          try {
+            final response = await _dio.fetch(error.requestOptions);
+            handler.resolve(response);
+          } catch (e) {
+            handler.next(error);
+          }
+        } else {
+          handler.next(error);
+        }
       },
     ));
 
@@ -246,6 +280,16 @@ class WorldviewService {
       debugPrint('[Worldview] Connection test failed: $e');
       return false;
     }
+  }
+
+  /// Check if request should be retried
+  bool _shouldRetry(DioException error) {
+    return error.type == DioExceptionType.connectionTimeout ||
+           error.type == DioExceptionType.receiveTimeout ||
+           error.type == DioExceptionType.sendTimeout ||
+           error.type == DioExceptionType.connectionError ||
+           (error.response?.statusCode != null && 
+            error.response!.statusCode! >= 500);
   }
 
   /// Dispose resources

@@ -23,18 +23,58 @@ class FirmsService {
   // ignore: unused_field
   final EarthdataAuthService _authService = EarthdataAuthService();
   
-  // Cache for fire data
+  // Cache for fire data - Extended for mobile data savings
   List<FirmsFireData>? _cachedFireData;
   DateTime? _cacheTime;
-  static const Duration cacheTimeout = Duration(minutes: 30);
+  static const Duration cacheTimeout = Duration(hours: 2); // Extended cache for mobile data
+  
+  // Smart caching based on network conditions
+  bool _isOnMobileData = false;
+  Duration get _smartCacheTimeout => _isOnMobileData 
+    ? const Duration(hours: 4)  // Longer cache on mobile data
+    : const Duration(hours: 1); // Shorter cache on WiFi
 
   FirmsService._internal() {
     _dio = Dio(BaseOptions(
       baseUrl: firmsBaseUrl,
-      connectTimeout: const Duration(seconds: 15),
-      receiveTimeout: const Duration(seconds: 30),
+      connectTimeout: const Duration(seconds: 30), // Increased for WiFi
+      receiveTimeout: const Duration(seconds: 60), // Increased for WiFi
+      sendTimeout: const Duration(seconds: 30),
       headers: {
         'User-Agent': 'NASA_GNSS_Client/1.0',
+        'Accept': 'text/plain,text/csv,*/*',
+        'Accept-Encoding': 'gzip, deflate',
+        'Connection': 'keep-alive',
+      },
+      followRedirects: true,
+      maxRedirects: 5,
+    ));
+
+    // Custom retry interceptor for WiFi/mobile data instability
+    _dio.interceptors.add(InterceptorsWrapper(
+      onError: (error, handler) async {
+        if (_shouldRetry(error) && error.requestOptions.extra['retryCount'] == null) {
+          error.requestOptions.extra['retryCount'] = 0;
+        }
+        
+        final retryCount = error.requestOptions.extra['retryCount'] as int? ?? 0;
+        if (retryCount < 5 && _shouldRetry(error)) {
+          debugPrint('[FIRMS Retry] Attempt ${retryCount + 1}/5 - ${error.message}');
+          error.requestOptions.extra['retryCount'] = retryCount + 1;
+          
+          // Progressive delay for mobile data
+          final delay = Duration(seconds: (retryCount + 1) * 2);
+          await Future.delayed(delay);
+          
+          try {
+            final response = await _dio.fetch(error.requestOptions);
+            handler.resolve(response);
+          } catch (e) {
+            handler.next(error);
+          }
+        } else {
+          handler.next(error);
+        }
       },
     ));
 
@@ -59,11 +99,12 @@ class FirmsService {
     double? maxLon,
     bool forceRefresh = false,
   }) async {
-    // Return cached data if available and not expired
+    // Return cached data if available and not expired (smart caching)
     if (!forceRefresh &&
         _cachedFireData != null &&
         _cacheTime != null &&
-        DateTime.now().difference(_cacheTime!) < cacheTimeout) {
+        DateTime.now().difference(_cacheTime!) < _smartCacheTimeout) {
+      debugPrint('[FIRMS] 💾 Using cached data (${_cachedFireData!.length} fires) - ${DateTime.now().difference(_cacheTime!).inMinutes}min old');
       return _filterFiresByBounds(
         _cachedFireData!,
         minLat,
@@ -104,6 +145,20 @@ class FirmsService {
         
         if (response.data is String && response.data.toString().length > 50) {
           final fires = _parseCsvWithHeader(response.data as String);
+          
+          // If API returns no data (only header), try alternate API sources/time windows
+          if (fires.isEmpty) {
+            debugPrint('[FIRMS] ⚠️ API returned only header, no fire data. Trying alternate API sources/time windows...');
+            return await _tryAlternateApiRequests(
+              source: source,
+              dayRange: dayRange,
+              minLat: minLat,
+              maxLat: maxLat,
+              minLon: minLon,
+              maxLon: maxLon,
+            );
+          }
+          
           _cachedFireData = fires;
           _cacheTime = DateTime.now();
           debugPrint('[FIRMS] ✅ Retrieved ${fires.length} active fires from API');
@@ -118,16 +173,31 @@ class FirmsService {
           
           return fires;
         } else {
-          debugPrint('[FIRMS] ⚠️ Response data is empty or not String, falling back...');
-          return await _fetchFromPublicCsv(source: source, dayRange: dayRange);
+          debugPrint('[FIRMS] ⚠️ Response data is empty or not String, trying alternate API sources/time windows...');
+          return await _tryAlternateApiRequests(
+            source: source,
+            dayRange: dayRange,
+            minLat: minLat,
+            maxLat: maxLat,
+            minLon: minLon,
+            maxLon: maxLon,
+          );
         }
       }
 
       throw Exception('FIRMS API fetch failed: ${response.statusCode}');
     } catch (e) {
-      debugPrint('[FIRMS] Error fetching active fires: $e');
-      // Fallback to public CSV if API fails
-      return await _fetchFromPublicCsv(source: source, dayRange: dayRange);
+      debugPrint('[FIRMS] ❌ Error fetching active fires: $e');
+      // Try alternate API requests (no CSV/mock)
+      debugPrint('[FIRMS] 🔄 Trying alternate API sources/time windows...');
+      return await _tryAlternateApiRequests(
+        source: source,
+        dayRange: dayRange,
+        minLat: minLat,
+        maxLat: maxLat,
+        minLon: minLon,
+        maxLon: maxLon,
+      );
     }
   }
 
@@ -159,50 +229,71 @@ class FirmsService {
     return url;
   }
 
-  /// Fallback to public CSV if API fails
-  Future<List<FirmsFireData>> _fetchFromPublicCsv({
+  /// Try alternate API sources, areas, and time windows (no CSV/mock)
+  Future<List<FirmsFireData>> _tryAlternateApiRequests({
     required String source,
     required int dayRange,
+    double? minLat,
+    double? maxLat,
+    double? minLon,
+    double? maxLon,
   }) async {
-    try {
-      debugPrint('[FIRMS] Falling back to public CSV...');
-      final url = _buildPublicCsvUrl(source: source, dayRange: dayRange);
-      final response = await Dio(BaseOptions(headers: {
-        'User-Agent': 'NASA_GNSS_Client/1.0',
-      })).get(url);
+    final allSources = <String>['VIIRS_SNPP_NRT', 'VIIRS_NOAA20_NRT', 'MODIS_NRT'];
+    // Reorder to prioritize current source first
+    final sources = [source, ...allSources.where((s) => s != source)];
 
-      if (response.statusCode == 200 && response.data is String) {
-        final fires = _parseCsvWithHeader(response.data as String);
-        debugPrint('[FIRMS] Retrieved ${fires.length} fires from public CSV');
-        return fires;
+    final hasBbox = minLat != null && maxLat != null && minLon != null && maxLon != null;
+    // Try world then bbox (bbox sometimes returns 500)
+    final areaVariants = hasBbox ? ['world', 'bbox'] : ['world'];
+
+    // Escalate day range: original, 2, 3, 5, 7 (unique, within 1..10)
+    final windowCandidates = <int>{dayRange, 2, 3, 5, 7}
+        .where((d) => d >= 1 && d <= 10)
+        .toList();
+
+    for (final src in sources) {
+      for (final area in areaVariants) {
+        for (final win in windowCandidates) {
+          try {
+            final url = _buildApiUrl(
+              source: src,
+              dayRange: win,
+              minLat: area == 'bbox' ? minLat : null,
+              maxLat: area == 'bbox' ? maxLat : null,
+              minLon: area == 'bbox' ? minLon : null,
+              maxLon: area == 'bbox' ? maxLon : null,
+            );
+
+            final response = await _dio.get(url);
+            if (response.statusCode == 200 && response.data is String) {
+              final dataStr = response.data as String;
+              if (dataStr.length > 50) {
+                final fires = _parseCsvWithHeader(dataStr);
+                debugPrint('[FIRMS] ✅ Alternate API success: src=$src, area=$area, days=$win, fires=${fires.length}');
+                if (fires.isNotEmpty) {
+                  _cachedFireData = fires;
+                  _cacheTime = DateTime.now();
+                  return fires;
+                }
+              } else {
+                debugPrint('[FIRMS] ⚠️ Alternate API returned header-only: src=$src, area=$area, days=$win');
+              }
+            } else {
+              debugPrint('[FIRMS] ⚠️ Alternate API non-200: ${response.statusCode} for src=$src, area=$area, days=$win');
+            }
+          } catch (e) {
+            debugPrint('[FIRMS] ❌ Alternate API attempt failed: src=$src, area=$area, days=$win, error=$e');
+            // Continue trying other combos
+          }
+        }
       }
-    } catch (e) {
-      debugPrint('[FIRMS] Public CSV fallback failed: $e');
     }
-    
-    // Final fallback to mock data
-    return _generateMockFireData();
+
+    debugPrint('[FIRMS] ⛔ No real data available from API after all attempts');
+    return [];
   }
 
-  /// Build public CSV URL
-  String _buildPublicCsvUrl({required String source, required int dayRange}) {
-    // Normalize dayRange to available CSV windows
-    final window = dayRange <= 1
-        ? '24h'
-        : dayRange <= 2
-            ? '48h'
-            : '7d';
 
-    switch (source) {
-      case 'MODIS_NRT':
-        return 'https://firms.modaps.eosdis.nasa.gov/data/active_fire/modis-c6.1/csv/MODIS_C6_1_Global_${window}.csv';
-      case 'VIIRS_NOAA20_NRT':
-        return 'https://firms.modaps.eosdis.nasa.gov/data/active_fire/viirs-noaa20-nrt/csv/VIIRS_NOAA20_NRT_Global_${window}.csv';
-      case 'VIIRS_SNPP_NRT':
-      default:
-        return 'https://firms.modaps.eosdis.nasa.gov/data/active_fire/viirs-snpp-nrt/csv/VIIRS_SNPP_NRT_Global_${window}.csv';
-    }
-  }
 
   /// Get archive fire data for a specific date range using API key
   Future<List<FirmsFireData>> getArchiveFires({
@@ -356,33 +447,6 @@ class FirmsService {
     ).toList();
   }
 
-  /// Generate mock fire data for testing
-  List<FirmsFireData> _generateMockFireData() {
-    final now = DateTime.now();
-    final random = Random();
-    return List.generate(20, (index) {
-      final lat = -90 + random.nextDouble() * 180; // Random latitude
-      final lon = -180 + random.nextDouble() * 360; // Random longitude
-      final brightness = 300 + random.nextDouble() * 100; // 300-400K
-      final frp = random.nextDouble() * 50; // 0-50 MW
-      
-      return FirmsFireData(
-        latitude: lat,
-        longitude: lon,
-        brightness: brightness,
-        scan: '1.0',
-        track: '1.0',
-        acqDate: now.subtract(Duration(hours: random.nextInt(24))),
-        acqTime: '${random.nextInt(24).toString().padLeft(2, '0')}${random.nextInt(60).toString().padLeft(2, '0')}',
-        satellite: random.nextBool() ? 'N' : 'T',
-        instrument: random.nextBool() ? 'VIIRS' : 'MODIS',
-        confidence: ['low', 'nominal', 'high'][random.nextInt(3)],
-        version: '2.0',
-        frp: frp,
-        daynight: random.nextBool() ? 'D' : 'N',
-      );
-    });
-  }
 
   /// Get fire statistics for a region
   Future<Map<String, dynamic>> getFireStatistics({
@@ -456,6 +520,16 @@ class FirmsService {
   void clearCache() {
     _cachedFireData = null;
     _cacheTime = null;
+  }
+
+  /// Check if request should be retried
+  bool _shouldRetry(DioException error) {
+    return error.type == DioExceptionType.connectionTimeout ||
+           error.type == DioExceptionType.receiveTimeout ||
+           error.type == DioExceptionType.sendTimeout ||
+           error.type == DioExceptionType.connectionError ||
+           (error.response?.statusCode != null && 
+            error.response!.statusCode! >= 500);
   }
 
   /// Dispose resources

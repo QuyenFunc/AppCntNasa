@@ -31,8 +31,15 @@ class _RealtimeMainTabState extends State<RealtimeMainTab>
   Widget build(BuildContext context) {
     return Column(
       children: [
-        // Compact NTRIP Connection Panel at top
-        const NtripConnectionPanel(),
+        // NTRIP Connection Panel at top - constrained to prevent overflow
+        ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(context).size.height * 0.4, // Max 40% of screen height
+          ),
+          child: const SingleChildScrollView(
+            child: NtripConnectionPanel(),
+          ),
+        ),
         
         // Sub-tabs
         Container(

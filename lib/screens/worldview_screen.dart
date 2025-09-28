@@ -151,10 +151,6 @@ class _WorldviewScreenState extends State<WorldviewScreen>
     });
   }
 
-  void _resetTileErrors() {
-    _failedTileCount = 0;
-    _showErrorIndicator = false;
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -475,14 +471,6 @@ class _WorldviewScreenState extends State<WorldviewScreen>
                     _mapController.move(_mapController.camera.center, zoom - 1);
                   },
                   child: const Icon(Icons.zoom_out),
-                ),
-                const SizedBox(height: 8),
-                FloatingActionButton.small(
-                  heroTag: 'location',
-                  onPressed: () {
-                    _mapController.move(const LatLng(0, 0), 2.0);
-                  },
-                  child: const Icon(Icons.my_location),
                 ),
                 const SizedBox(height: 8),
                 FloatingActionButton.small(

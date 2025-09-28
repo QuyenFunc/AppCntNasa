@@ -26,6 +26,7 @@ class _FirmsScreenState extends State<FirmsScreen>
   late AnimationController _filterPanelController;
   late Animation<double> _filterPanelAnimation;
   bool _isFilterPanelVisible = false;
+  bool _hideInfoPanel = false; // Ẩn info panel khi filter mở
   
   // Search functionality
   final TextEditingController _locationSearchController = TextEditingController();
@@ -95,7 +96,40 @@ class _FirmsScreenState extends State<FirmsScreen>
         }
         _fitMapToFires(fires);
       } else {
-        debugPrint('[FIRMS UI] ❌ No fires to display - check API/fallback');
+        debugPrint('[FIRMS UI] ⚠️ No fires to display - trying different data source...');
+        // Try different data source automatically
+        if (_selectedSource == 'VIIRS_SNPP_NRT') {
+          debugPrint('[FIRMS UI] 🔄 Switching to MODIS_NRT...');
+          setState(() {
+            _selectedSource = 'MODIS_NRT';
+          });
+          _loadFireData(); // Retry with different source
+        } else if (_selectedSource == 'MODIS_NRT') {
+          debugPrint('[FIRMS UI] 🔄 Switching to VIIRS_NOAA20_NRT...');
+          setState(() {
+            _selectedSource = 'VIIRS_NOAA20_NRT';
+          });
+          _loadFireData(); // Retry with different source
+        } else {
+          // All sources tried, show message
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: const Text('Không có dữ liệu cháy rừng thật. Có thể thử lại sau...'),
+                backgroundColor: Colors.orange,
+                action: SnackBarAction(
+                  label: 'Thử lại',
+                  onPressed: () {
+                    setState(() {
+                      _selectedSource = 'VIIRS_SNPP_NRT'; // Reset to default
+                    });
+                    _loadFireData();
+                  },
+                ),
+              ),
+            );
+          }
+        }
       }
     } catch (e) {
       setState(() {
@@ -123,8 +157,8 @@ class _FirmsScreenState extends State<FirmsScreen>
 
       debugPrint('[FIRMS UI] 📍 Fire bounds: lat=$minLat to $maxLat, lon=$minLon to $maxLon');
 
-      // FIXED: Kiểm tra MapController trước khi sử dụng
-      if (_mapController.camera != null) {
+      // Fit map to fire bounds
+      try {
         final bounds = LatLngBounds(
           LatLng(minLat, minLon),
           LatLng(maxLat, maxLon),
@@ -136,7 +170,7 @@ class _FirmsScreenState extends State<FirmsScreen>
         ));
         
         debugPrint('[FIRMS UI] 🗺️ Map fitted to fire bounds');
-      } else {
+      } catch (e) {
         debugPrint('[FIRMS UI] ⏳ MapController not ready, skipping fit bounds');
         // Delay fitting until map is ready
         Future.delayed(const Duration(milliseconds: 500), () {
@@ -151,6 +185,7 @@ class _FirmsScreenState extends State<FirmsScreen>
   void _toggleFilterPanel() {
     setState(() {
       _isFilterPanelVisible = !_isFilterPanelVisible;
+      _hideInfoPanel = _isFilterPanelVisible; // Ẩn info panel khi filter mở
     });
     if (_isFilterPanelVisible) {
       _filterPanelController.forward();
@@ -177,26 +212,24 @@ class _FirmsScreenState extends State<FirmsScreen>
   double _getFireSize(FirmsFireData fire) {
     switch (fire.intensity) {
       case FireIntensity.extreme:
-        return 12.0;
+        return 3.0; // Giảm thêm từ 4.0
       case FireIntensity.high:
-        return 10.0;
+        return 2.5; // Giảm thêm từ 3.5
       case FireIntensity.moderate:
-        return 8.0;
+        return 2.0; // Giảm thêm từ 3.0
       case FireIntensity.low:
-        return 6.0;
+        return 1.5; // Giảm thêm từ 2.5
       case FireIntensity.unknown:
-        return 4.0;
+        return 1.0; // Giảm thêm từ 2.0
     }
   }
 
   // PERFORMANCE OPTIMIZATION: Tối ưu markers với tùy chọn hiển thị tất cả
   List<Marker> _getOptimizedFireMarkers() {
-    // FIXED: Kiểm tra MapController đã khởi tạo chưa
+    // Get current zoom level safely
     double currentZoom = 2.0; // Default zoom
     try {
-      if (_mapController.camera != null) {
-        currentZoom = _mapController.camera.zoom;
-      }
+      currentZoom = _mapController.camera.zoom;
     } catch (e) {
       // MapController chưa sẵn sàng, sử dụng default zoom
       debugPrint('[FIRMS] MapController not ready, using default zoom: $currentZoom');
@@ -248,13 +281,13 @@ class _FirmsScreenState extends State<FirmsScreen>
             shape: BoxShape.circle,
             border: Border.all(
               color: Colors.white,
-              width: 1,
+              width: 0.5, // Giảm từ 1 xuống 0.5
             ),
           ),
           child: const Icon(
             Icons.local_fire_department,
             color: Colors.white,
-            size: 8,
+            size: 2, // Giảm thêm từ 3 xuống 2
           ),
         ),
       ),
@@ -288,9 +321,7 @@ class _FirmsScreenState extends State<FirmsScreen>
     // Tính toán số markers sẽ hiển thị dựa trên zoom level
     double currentZoom = 2.0;
     try {
-      if (_mapController.camera != null) {
-        currentZoom = _mapController.camera.zoom;
-      }
+      currentZoom = _mapController.camera.zoom;
     } catch (e) {
       // MapController chưa sẵn sàng
     }
@@ -408,7 +439,7 @@ class _FirmsScreenState extends State<FirmsScreen>
               ),
             ),
 
-          // Filter panel
+          // Filter panel với drag handle
           AnimatedBuilder(
             animation: _filterPanelAnimation,
             builder: (context, child) {
@@ -423,9 +454,26 @@ class _FirmsScreenState extends State<FirmsScreen>
                     color: theme.scaffoldBackgroundColor,
                     child: Column(
                       children: [
+                        // Drag handle
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          color: Colors.red.shade700,
+                          child: Center(
+                            child: Container(
+                              width: 40,
+                              height: 4,
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.7),
+                                borderRadius: BorderRadius.circular(2),
+                              ),
+                            ),
+                          ),
+                        ),
+                        
                         // Panel header
                         Container(
-                          padding: const EdgeInsets.all(16),
+                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
                           color: Colors.red.shade700,
                           child: Row(
                             children: [
@@ -449,7 +497,7 @@ class _FirmsScreenState extends State<FirmsScreen>
                         ),
 
                         Expanded(
-                          child: Padding(
+                          child: SingleChildScrollView(
                             padding: const EdgeInsets.all(16),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
@@ -578,7 +626,7 @@ class _FirmsScreenState extends State<FirmsScreen>
                                     ),
                                     onPressed: () {
                                       _loadFireData();
-                                      _toggleFilterPanel();
+                                      _toggleFilterPanel(); // Sẽ đóng filter và hiện lại info panel
                                     },
                                     child: const Text('Apply Filters'),
                                   ),
@@ -600,6 +648,9 @@ class _FirmsScreenState extends State<FirmsScreen>
                                 _buildLegendItem('Moderate', Colors.orange.shade600),
                                 _buildLegendItem('Low', Colors.yellow.shade600),
                                 _buildLegendItem('Unknown', Colors.grey.shade600),
+                                
+                                // Thêm khoảng trống để tránh bị che bởi bottom
+                                const SizedBox(height: 150), // Tăng từ 100 lên 150
                               ],
                             ),
                           ),
@@ -612,12 +663,44 @@ class _FirmsScreenState extends State<FirmsScreen>
             },
           ),
 
-          // Info panel
+          // Map controls (giống WorldView)
           Positioned(
-            bottom: 16,
+            top: 16,
             left: 16,
-            right: 16,
-            child: Card(
+            child: Column(
+              children: [
+                FloatingActionButton.small(
+                  heroTag: 'zoom_in',
+                  backgroundColor: Colors.red.shade700,
+                  foregroundColor: Colors.white,
+                  onPressed: () {
+                    final zoom = _mapController.camera.zoom;
+                    _mapController.move(_mapController.camera.center, zoom + 1);
+                  },
+                  child: const Icon(Icons.zoom_in),
+                ),
+                const SizedBox(height: 8),
+                FloatingActionButton.small(
+                  heroTag: 'zoom_out',
+                  backgroundColor: Colors.red.shade700,
+                  foregroundColor: Colors.white,
+                  onPressed: () {
+                    final zoom = _mapController.camera.zoom;
+                    _mapController.move(_mapController.camera.center, zoom - 1);
+                  },
+                  child: const Icon(Icons.zoom_out),
+                ),
+              ],
+            ),
+          ),
+
+          // Info panel (ẩn khi filter panel mở)
+          if (!_hideInfoPanel)
+            Positioned(
+              bottom: 16,
+              left: 16,
+              right: 16,
+              child: Card(
               elevation: 4,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
