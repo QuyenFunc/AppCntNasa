@@ -23,8 +23,7 @@ class _WorldviewScreenState extends State<WorldviewScreen>
   List<WorldviewLayer> _availableLayers = [];
   List<WorldviewLayer> _activeLayers = [];
   bool _isLoading = true;
-  String _searchQuery = '';
-  DateTime _selectedDate = DateTime.now().subtract(const Duration(days: 7)); // Default to 7 days ago for better data availability
+  DateTime _selectedDate = DateTime.now().subtract(const Duration(days: 1)); // Default to yesterday for real-time data availability
   
   late AnimationController _layerPanelController;
   late Animation<double> _layerPanelAnimation;
@@ -116,17 +115,16 @@ class _WorldviewScreenState extends State<WorldviewScreen>
   }
 
   List<WorldviewLayer> get _filteredLayers {
-    if (_searchQuery.isEmpty) return _availableLayers;
-    return _worldviewService.searchLayers(_availableLayers, _searchQuery);
+    return _availableLayers;
   }
 
   /// Build correct URL template for flutter_map
   String _buildTileUrlTemplate(WorldviewLayer layer) {
-    // SỬ DỤNG FIXED DATE THAY VÌ DYNAMIC  
-    const fixedDate = '2024-09-01'; // Date đã test working
+    // SỬ DỤNG REAL-TIME DATE (ngày được chọn hoặc ngày hiện tại)
+    final dateString = '${_selectedDate.year}-${_selectedDate.month.toString().padLeft(2, '0')}-${_selectedDate.day.toString().padLeft(2, '0')}';
     final extension = layer.format == 'image/png' ? 'png' : 'jpg';
-    final url = '${layer.baseUrl}/${layer.id}/default/$fixedDate/${layer.tileMatrixSet}/{z}/{y}/{x}.$extension';
-    debugPrint('[Worldview] 🌍 Fixed URL Template: $url');
+    final url = '${layer.baseUrl}/${layer.id}/default/$dateString/${layer.tileMatrixSet}/{z}/{y}/{x}.$extension';
+    debugPrint('[Worldview] 🌍 Real-time URL Template: $url (Date: $dateString)');
     return url;
   }
 
@@ -329,41 +327,68 @@ class _WorldviewScreenState extends State<WorldviewScreen>
                           ),
                         ),
 
-                        // Search bar
-                        Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: TextField(
-                            decoration: InputDecoration(
-                              hintText: 'Search layers...',
-                              prefixIcon: const Icon(Icons.search),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                            ),
-                            onChanged: (value) {
-                              setState(() {
-                                _searchQuery = value;
-                              });
-                            },
-                          ),
-                        ),
 
                         // Date selector
                         Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 16),
-                          child: Row(
+                          child: Column(
                             children: [
-                              const Icon(Icons.calendar_today),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  'Date: ${_selectedDate.year}-${_selectedDate.month.toString().padLeft(2, '0')}-${_selectedDate.day.toString().padLeft(2, '0')}',
-                                  style: theme.textTheme.bodyMedium,
-                                ),
+                              Row(
+                                children: [
+                                  const Icon(Icons.calendar_today),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      'Date: ${_selectedDate.year}-${_selectedDate.month.toString().padLeft(2, '0')}-${_selectedDate.day.toString().padLeft(2, '0')}',
+                                      style: theme.textTheme.bodyMedium,
+                                    ),
+                                  ),
+                                  IconButton(
+                                    icon: const Icon(Icons.edit),
+                                    onPressed: () => _selectDate(),
+                                    tooltip: 'Select Date',
+                                  ),
+                                ],
                               ),
-                              IconButton(
-                                icon: const Icon(Icons.edit),
-                                onPressed: () => _selectDate(),
+                              const SizedBox(height: 8),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: ElevatedButton.icon(
+                                      onPressed: () {
+                                        setState(() {
+                                          _selectedDate = DateTime.now().subtract(const Duration(days: 1));
+                                        });
+                                        _refreshLayers();
+                                      },
+                                      icon: const Icon(Icons.refresh, size: 16),
+                                      label: const Text('Latest Data', style: TextStyle(fontSize: 12)),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: Colors.green,
+                                        foregroundColor: Colors.white,
+                                        padding: const EdgeInsets.symmetric(vertical: 8),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: ElevatedButton.icon(
+                                      onPressed: () {
+                                        setState(() {
+                                          _selectedDate = DateTime.now();
+                                        });
+                                        _refreshLayers();
+                                      },
+                                      icon: const Icon(Icons.today, size: 16),
+                                      label: const Text('Today', style: TextStyle(fontSize: 12)),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: Colors.blue,
+                                        foregroundColor: Colors.white,
+                                        padding: const EdgeInsets.symmetric(vertical: 8),
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ],
                           ),
@@ -498,6 +523,44 @@ class _WorldviewScreenState extends State<WorldviewScreen>
                   },
                   child: const Icon(Icons.skip_previous),
                 ),
+                const SizedBox(height: 8),
+                FloatingActionButton.small(
+                  heroTag: 'next_day',
+                  backgroundColor: Colors.green,
+                  onPressed: () {
+                    // Không cho phép tua quá ngày hiện tại
+                    final tomorrow = _selectedDate.add(const Duration(days: 1));
+                    if (tomorrow.isAfter(DateTime.now())) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Cannot go beyond today'),
+                          duration: Duration(seconds: 2),
+                        ),
+                      );
+                      return;
+                    }
+                    
+                    _dateChangeTimer?.cancel();
+                    setState(() {
+                      _selectedDate = tomorrow;
+                    });
+                    
+                    // Debounce tile reloading
+                    _dateChangeTimer = Timer(const Duration(milliseconds: 500), () {
+                      if (mounted) {
+                        setState(() {}); // Trigger tile reload after debounce
+                      }
+                    });
+                    
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Switched to ${_selectedDate.day}/${_selectedDate.month}/${_selectedDate.year}'),
+                        duration: const Duration(seconds: 2),
+                      ),
+                    );
+                  },
+                  child: const Icon(Icons.skip_next),
+                ),
               ],
             ),
           ),
@@ -507,22 +570,31 @@ class _WorldviewScreenState extends State<WorldviewScreen>
   }
 
   Future<void> _selectDate() async {
-    final safeDate = DateTime.now().subtract(const Duration(days: 7)); // 7 days ago as max
     final date = await showDatePicker(
       context: context,
       initialDate: _selectedDate,
       firstDate: DateTime.now().subtract(const Duration(days: 365)),
-      lastDate: safeDate, // Don't allow dates newer than 7 days ago
-      helpText: 'Select satellite imagery date (data available 7+ days ago)',
+      lastDate: DateTime.now(), // Allow up to today for real-time data
+      helpText: 'Select satellite imagery date (real-time data available)',
       errorFormatText: 'Invalid date format',
-      errorInvalidText: 'Date out of range - satellite data needs 7+ days processing time',
+      errorInvalidText: 'Date out of range',
     );
 
     if (date != null) {
       setState(() {
         _selectedDate = date;
       });
+      // Tự động cập nhật layers khi ngày thay đổi
+      _refreshLayers();
     }
+  }
+
+  void _refreshLayers() {
+    // Trigger rebuild của tile layers với ngày mới
+    setState(() {
+      // Force rebuild of tile layers
+    });
+    debugPrint('[Worldview] 🔄 Refreshed layers for date: ${_selectedDate.year}-${_selectedDate.month.toString().padLeft(2, '0')}-${_selectedDate.day.toString().padLeft(2, '0')}');
   }
 
   void _showLocationSearch() {

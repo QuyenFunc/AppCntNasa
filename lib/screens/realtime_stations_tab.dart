@@ -10,8 +10,6 @@ class RealtimeStationsTab extends StatefulWidget {
 }
 
 class _RealtimeStationsTabState extends State<RealtimeStationsTab> {
-  final _searchController = TextEditingController();
-  String _searchQuery = '';
 
   // Available mountpoints from EarthScope NTRIP caster
   final List<MountpointInfo> _availableMountpoints = [
@@ -117,21 +115,9 @@ class _RealtimeStationsTabState extends State<RealtimeStationsTab> {
     ),
   ];
 
-  @override
-  void dispose() {
-    _searchController.dispose();
-    super.dispose();
-  }
 
   List<MountpointInfo> get _filteredMountpoints {
-    if (_searchQuery.isEmpty) return _availableMountpoints;
-    
-    return _availableMountpoints.where((mp) {
-      return mp.id.toLowerCase().contains(_searchQuery.toLowerCase()) ||
-             mp.name.toLowerCase().contains(_searchQuery.toLowerCase()) ||
-             mp.location.toLowerCase().contains(_searchQuery.toLowerCase()) ||
-             mp.dataTypes.any((type) => type.toLowerCase().contains(_searchQuery.toLowerCase()));
-    }).toList();
+    return _availableMountpoints;
   }
 
   @override
@@ -140,67 +126,6 @@ class _RealtimeStationsTabState extends State<RealtimeStationsTab> {
       builder: (context, provider, child) {
         return Column(
           children: [
-            // Search bar
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: TextField(
-                controller: _searchController,
-                decoration: InputDecoration(
-                  hintText: 'Search mountpoints...',
-                  prefixIcon: const Icon(Icons.search),
-                  suffixIcon: _searchQuery.isNotEmpty
-                      ? IconButton(
-                          icon: const Icon(Icons.clear),
-                          onPressed: () {
-                            _searchController.clear();
-                            setState(() {
-                              _searchQuery = '';
-                            });
-                          },
-                        )
-                      : null,
-                  border: const OutlineInputBorder(),
-                ),
-                onChanged: (value) {
-                  setState(() {
-                    _searchQuery = value;
-                  });
-                },
-              ),
-            ),
-            
-            // Filter chips
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Wrap(
-                spacing: 8,
-                children: [
-                  FilterChip(
-                    label: const Text('Public'),
-                    selected: true,
-                    onSelected: (selected) {
-                      // TODO: Implement filter
-                    },
-                  ),
-                  FilterChip(
-                    label: const Text('Multi-GNSS'),
-                    selected: false,
-                    onSelected: (selected) {
-                      // TODO: Implement filter
-                    },
-                  ),
-                  FilterChip(
-                    label: const Text('Real-time'),
-                    selected: false,
-                    onSelected: (selected) {
-                      // TODO: Implement filter
-                    },
-                  ),
-                ],
-              ),
-            ),
-            
-            const SizedBox(height: 16),
             
             // Mountpoint list
             Expanded(

@@ -47,7 +47,7 @@ class _RealtimeMainTabState extends State<RealtimeMainTab>
           child: TabBar(
             controller: _tabController,
             labelColor: Theme.of(context).primaryColor,
-            unselectedLabelColor: Colors.grey,
+            unselectedLabelColor: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
             indicatorColor: Theme.of(context).primaryColor,
             tabs: const [
               Tab(

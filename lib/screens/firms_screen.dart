@@ -36,6 +36,11 @@ class _FirmsScreenState extends State<FirmsScreen>
   // Performance settings
   bool _limitMarkers = true; // Mặc định giới hạn markers để performance tốt
   bool _showAllFires = false; // Toggle để hiển thị tất cả fires
+  Timer? _rebuildTimer; // Timer để throttle rebuilds
+  FirmsFireData? _selectedFire; // Selected fire for popup
+  
+  // Fire intensity filters - mặc định chỉ hiển thị extreme
+  Set<FireIntensity> _enabledIntensities = {FireIntensity.extreme};
 
   final List<String> _availableSources = [
     'VIIRS_SNPP_NRT',
@@ -210,18 +215,43 @@ class _FirmsScreenState extends State<FirmsScreen>
   }
 
   double _getFireSize(FirmsFireData fire) {
+    // Get current zoom level
+    double currentZoom = 2.0;
+    try {
+      currentZoom = _mapController.camera.zoom;
+    } catch (e) {
+      // MapController chưa sẵn sàng, sử dụng default zoom
+    }
+    
+    // Base size tăng theo zoom level
+    double zoomMultiplier = (currentZoom / 2.0).clamp(0.8, 3.0); // Zoom multiplier từ 0.8 đến 3.0
+    
     switch (fire.intensity) {
       case FireIntensity.extreme:
-        return 3.0; // Giảm thêm từ 4.0
+        return 10.0 * zoomMultiplier; // Giảm 1 nửa từ 20.0
       case FireIntensity.high:
-        return 2.5; // Giảm thêm từ 3.5
+        return 8.0 * zoomMultiplier; // Giảm 1 nửa từ 16.0
       case FireIntensity.moderate:
-        return 2.0; // Giảm thêm từ 3.0
+        return 6.0 * zoomMultiplier; // Giảm 1 nửa từ 12.0
       case FireIntensity.low:
-        return 1.5; // Giảm thêm từ 2.5
+        return 5.0 * zoomMultiplier; // Giảm 1 nửa từ 10.0
       case FireIntensity.unknown:
-        return 1.0; // Giảm thêm từ 2.0
+        return 4.0 * zoomMultiplier; // Giảm 1 nửa từ 8.0
     }
+  }
+
+  double _getIconSize() {
+    // Get current zoom level
+    double currentZoom = 2.0;
+    try {
+      currentZoom = _mapController.camera.zoom;
+    } catch (e) {
+      // MapController chưa sẵn sàng, sử dụng default zoom
+    }
+    
+    // Icon size tăng theo zoom level - giảm 1 nửa
+    double iconSize = 3.0 + (currentZoom * 0.6); // Bắt đầu từ 3, tăng chậm hơn
+    return iconSize.clamp(3.0, 10.0); // Giới hạn từ 3 đến 10
   }
 
   // PERFORMANCE OPTIMIZATION: Tối ưu markers với tùy chọn hiển thị tất cả
@@ -235,25 +265,29 @@ class _FirmsScreenState extends State<FirmsScreen>
       debugPrint('[FIRMS] MapController not ready, using default zoom: $currentZoom');
     }
     
+    // Lọc theo intensity trước
+    final filteredByIntensity = _fireData.where((fire) => _enabledIntensities.contains(fire.intensity)).toList();
+    debugPrint('[FIRMS] 🔥 Filtered by intensity: ${filteredByIntensity.length}/${_fireData.length} fires');
+    
     List<FirmsFireData> firesToShow;
     
     if (_showAllFires || !_limitMarkers) {
-      // Hiển thị TẤT CẢ fires - có thể lag với số lượng lớn
-      firesToShow = _fireData;
-      debugPrint('[FIRMS] 🔥 Showing ALL ${_fireData.length} fires (may cause lag)');
+      // Hiển thị TẤT CẢ fires đã lọc - có thể lag với số lượng lớn
+      firesToShow = filteredByIntensity;
+      debugPrint('[FIRMS] 🔥 Showing ALL ${filteredByIntensity.length} filtered fires (may cause lag)');
     } else {
-      // Giới hạn số markers dựa trên zoom level để tối ưu performance
+      // Giới hạn số markers dựa trên zoom level để tối ưu performance và tránh crash
       int maxMarkers;
       if (currentZoom < 3) {
-        maxMarkers = 200; // Tăng lên từ 100
+        maxMarkers = 50; // Giảm mạnh để tránh crash
       } else if (currentZoom < 6) {
-        maxMarkers = 800; // Tăng lên từ 500
+        maxMarkers = 150; // Giảm mạnh để tránh crash
       } else {
-        maxMarkers = 2000; // Tăng lên từ 1000
+        maxMarkers = 300; // Giảm mạnh để tránh crash
       }
 
-      // Ưu tiên hiển thị fires có confidence cao và intensity lớn
-      final sortedFires = List<FirmsFireData>.from(_fireData)
+      // Ưu tiên hiển thị fires có confidence cao và intensity lớn từ danh sách đã lọc
+      final sortedFires = List<FirmsFireData>.from(filteredByIntensity)
         ..sort((a, b) {
           // Sort theo intensity trước, confidence sau
           final intensityCompare = _getIntensityPriority(b.intensity)
@@ -266,7 +300,7 @@ class _FirmsScreenState extends State<FirmsScreen>
 
       // Lấy top markers theo priority
       firesToShow = sortedFires.take(maxMarkers).toList();
-      debugPrint('[FIRMS] 🔥 Showing top $maxMarkers/${_fireData.length} fires (zoom: ${currentZoom.toStringAsFixed(1)})');
+      debugPrint('[FIRMS] 🔥 Showing top $maxMarkers/${filteredByIntensity.length} filtered fires (zoom: ${currentZoom.toStringAsFixed(1)})');
     }
 
     return firesToShow.map((fire) => Marker(
@@ -274,7 +308,11 @@ class _FirmsScreenState extends State<FirmsScreen>
       width: _getFireSize(fire),
       height: _getFireSize(fire),
       child: GestureDetector(
-        onTap: () => _showFireDetails(fire),
+        onTap: () {
+          setState(() {
+            _selectedFire = fire;
+          });
+        },
         child: Container(
           decoration: BoxDecoration(
             color: _getFireColor(fire),
@@ -284,10 +322,10 @@ class _FirmsScreenState extends State<FirmsScreen>
               width: 0.5, // Giảm từ 1 xuống 0.5
             ),
           ),
-          child: const Icon(
+          child: Icon(
             Icons.local_fire_department,
             color: Colors.white,
-            size: 2, // Giảm thêm từ 3 xuống 2
+            size: _getIconSize(), // Kích thước icon thay đổi theo zoom level
           ),
         ),
       ),
@@ -314,8 +352,11 @@ class _FirmsScreenState extends State<FirmsScreen>
   }
 
   int _getDisplayedFireCount() {
+    // Lọc theo intensity trước
+    final filteredByIntensity = _fireData.where((fire) => _enabledIntensities.contains(fire.intensity)).toList();
+    
     if (_showAllFires || !_limitMarkers) {
-      return _fireData.length;
+      return filteredByIntensity.length;
     }
     
     // Tính toán số markers sẽ hiển thị dựa trên zoom level
@@ -328,14 +369,14 @@ class _FirmsScreenState extends State<FirmsScreen>
     
     int maxMarkers;
     if (currentZoom < 3) {
-      maxMarkers = 200;
+      maxMarkers = 50;
     } else if (currentZoom < 6) {
-      maxMarkers = 800;
+      maxMarkers = 150;
     } else {
-      maxMarkers = 2000;
+      maxMarkers = 300;
     }
     
-    return maxMarkers.clamp(0, _fireData.length);
+    return maxMarkers.clamp(0, filteredByIntensity.length);
   }
 
   @override
@@ -412,6 +453,19 @@ class _FirmsScreenState extends State<FirmsScreen>
               interactionOptions: const InteractionOptions(
                 flags: InteractiveFlag.all,
               ),
+              onMapEvent: (MapEvent mapEvent) {
+                // Throttle updates để tránh crash
+                if (mapEvent is MapEventMoveEnd) {
+                  _rebuildTimer?.cancel();
+                  _rebuildTimer = Timer(const Duration(milliseconds: 300), () {
+                    if (mounted) {
+                      setState(() {
+                        // Trigger rebuild để cập nhật size của markers theo zoom level
+                      });
+                    }
+                  });
+                }
+              },
             ),
             children: [
               // Base map
@@ -436,6 +490,21 @@ class _FirmsScreenState extends State<FirmsScreen>
                 child: CircularProgressIndicator(
                   color: Colors.red,
                 ),
+              ),
+            ),
+
+          // Fire details popup
+          if (_selectedFire != null)
+            Positioned(
+              top: 16,
+              right: 16,
+              child: FireInfoPopup(
+                fire: _selectedFire!,
+                onClose: () {
+                  setState(() {
+                    _selectedFire = null;
+                  });
+                },
               ),
             ),
 
@@ -533,24 +602,136 @@ class _FirmsScreenState extends State<FirmsScreen>
 
                                 const SizedBox(height: 24),
 
-                                // Day range selector
-                                Text(
-                                  'Time Range: $_dayRange day${_dayRange > 1 ? 's' : ''}',
-                                  style: const TextStyle(
+                                // Fire Intensity Filters
+                                const Text(
+                                  'Fire Intensity Filters',
+                                  style: TextStyle(
                                     fontSize: 16,
                                     fontWeight: FontWeight.bold,
                                   ),
                                 ),
                                 const SizedBox(height: 8),
-                                Slider(
-                                  value: _dayRange.toDouble(),
-                                  min: 1,
-                                  max: 10,
-                                  divisions: 9,
-                                  label: '$_dayRange day${_dayRange > 1 ? 's' : ''}',
-                                  onChanged: (value) {
+                                Text(
+                                  'Chọn cường độ đám cháy để hiển thị:',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: Colors.grey[600],
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+                                
+                                // Extreme
+                                CheckboxListTile(
+                                  title: Row(
+                                    children: [
+                                      Container(
+                                        width: 16,
+                                        height: 16,
+                                        decoration: BoxDecoration(
+                                          color: Colors.red.shade800,
+                                          shape: BoxShape.circle,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      const Text('Extreme'),
+                                    ],
+                                  ),
+                                  subtitle: const Text('Đám cháy cực kỳ nghiêm trọng'),
+                                  value: _enabledIntensities.contains(FireIntensity.extreme),
+                                  onChanged: (bool? value) {
                                     setState(() {
-                                      _dayRange = value.round();
+                                      if (value == true) {
+                                        _enabledIntensities.add(FireIntensity.extreme);
+                                      } else {
+                                        _enabledIntensities.remove(FireIntensity.extreme);
+                                      }
+                                    });
+                                  },
+                                ),
+                                
+                                // High
+                                CheckboxListTile(
+                                  title: Row(
+                                    children: [
+                                      Container(
+                                        width: 16,
+                                        height: 16,
+                                        decoration: BoxDecoration(
+                                          color: Colors.red.shade600,
+                                          shape: BoxShape.circle,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      const Text('High'),
+                                    ],
+                                  ),
+                                  subtitle: const Text('Đám cháy nghiêm trọng'),
+                                  value: _enabledIntensities.contains(FireIntensity.high),
+                                  onChanged: (bool? value) {
+                                    setState(() {
+                                      if (value == true) {
+                                        _enabledIntensities.add(FireIntensity.high);
+                                      } else {
+                                        _enabledIntensities.remove(FireIntensity.high);
+                                      }
+                                    });
+                                  },
+                                ),
+                                
+                                // Moderate
+                                CheckboxListTile(
+                                  title: Row(
+                                    children: [
+                                      Container(
+                                        width: 16,
+                                        height: 16,
+                                        decoration: BoxDecoration(
+                                          color: Colors.orange.shade600,
+                                          shape: BoxShape.circle,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      const Text('Moderate'),
+                                    ],
+                                  ),
+                                  subtitle: const Text('Đám cháy vừa phải'),
+                                  value: _enabledIntensities.contains(FireIntensity.moderate),
+                                  onChanged: (bool? value) {
+                                    setState(() {
+                                      if (value == true) {
+                                        _enabledIntensities.add(FireIntensity.moderate);
+                                      } else {
+                                        _enabledIntensities.remove(FireIntensity.moderate);
+                                      }
+                                    });
+                                  },
+                                ),
+                                
+                                // Low
+                                CheckboxListTile(
+                                  title: Row(
+                                    children: [
+                                      Container(
+                                        width: 16,
+                                        height: 16,
+                                        decoration: BoxDecoration(
+                                          color: Colors.yellow.shade600,
+                                          shape: BoxShape.circle,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      const Text('Low'),
+                                    ],
+                                  ),
+                                  subtitle: const Text('Đám cháy nhẹ'),
+                                  value: _enabledIntensities.contains(FireIntensity.low),
+                                  onChanged: (bool? value) {
+                                    setState(() {
+                                      if (value == true) {
+                                        _enabledIntensities.add(FireIntensity.low);
+                                      } else {
+                                        _enabledIntensities.remove(FireIntensity.low);
+                                      }
                                     });
                                   },
                                 ),
@@ -613,24 +794,6 @@ class _FirmsScreenState extends State<FirmsScreen>
                                       ],
                                     ),
                                   ),
-
-                                const SizedBox(height: 24),
-
-                                // Apply button
-                                SizedBox(
-                                  width: double.infinity,
-                                  child: ElevatedButton(
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: Colors.red.shade700,
-                                      foregroundColor: Colors.white,
-                                    ),
-                                    onPressed: () {
-                                      _loadFireData();
-                                      _toggleFilterPanel(); // Sẽ đóng filter và hiện lại info panel
-                                    },
-                                    child: const Text('Apply Filters'),
-                                  ),
-                                ),
 
                                 const SizedBox(height: 24),
 
@@ -723,17 +886,22 @@ class _FirmsScreenState extends State<FirmsScreen>
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceAround,
                         children: [
-                          _buildInfoItem(
-                            'Đám Cháy', 
-                            _showAllFires 
-                              ? '${_fireData.length}' 
-                              : '${_getDisplayedFireCount()}/${_fireData.length}', 
-                            Icons.local_fire_department
+                          Expanded(
+                            child: _buildInfoItem(
+                              'Đám Cháy', 
+                              _showAllFires 
+                                ? '${_fireData.length}' 
+                                : '${_getDisplayedFireCount()}/${_fireData.length}', 
+                              Icons.local_fire_department
+                            ),
                           ),
-                          _buildInfoItem('Độ Tin Cậy Cao', '${_statistics['high_confidence'] ?? 0}', Icons.verified),
-                          _buildInfoItem('Nguồn Dữ Liệu', _getSourceDisplayName(_selectedSource), Icons.satellite),
+                          Expanded(
+                            child: _buildInfoItem('Độ Tin Cậy Cao', '${_statistics['high_confidence'] ?? 0}', Icons.verified),
+                          ),
+                          Expanded(
+                            child: _buildInfoItem('Nguồn Dữ Liệu', _getSourceDisplayName(_selectedSource), Icons.satellite),
+                          ),
                         ],
                       ),
                       if (_fireData.isEmpty) ...[
@@ -825,98 +993,7 @@ class _FirmsScreenState extends State<FirmsScreen>
     }
   }
 
-  void _showFireDetails(FirmsFireData fire) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      builder: (context) => DraggableScrollableSheet(
-        initialChildSize: 0.6,
-        maxChildSize: 0.9,
-        minChildSize: 0.3,
-        builder: (context, scrollController) => Container(
-          decoration: const BoxDecoration(
-            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-          ),
-          child: Column(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: _getFireColor(fire),
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.local_fire_department, color: Colors.white),
-                    const SizedBox(width: 8),
-                    const Text(
-                      'Fire Details',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const Spacer(),
-                    IconButton(
-                      icon: const Icon(Icons.close, color: Colors.white),
-                      onPressed: () => Navigator.pop(context),
-                    ),
-                  ],
-                ),
-              ),
-              Expanded(
-                child: ListView(
-                  controller: scrollController,
-                  padding: const EdgeInsets.all(16),
-                  children: [
-                    _buildDetailRow('Location', '${fire.latitude.toStringAsFixed(4)}, ${fire.longitude.toStringAsFixed(4)}'),
-                    _buildDetailRow('Acquisition Date', '${fire.acqDate.year}-${fire.acqDate.month.toString().padLeft(2, '0')}-${fire.acqDate.day.toString().padLeft(2, '0')}'),
-                    _buildDetailRow('Acquisition Time', fire.acqTime),
-                    _buildDetailRow('Satellite', fire.satellite),
-                    _buildDetailRow('Instrument', fire.instrument),
-                    _buildDetailRow('Confidence', fire.confidence),
-                    if (fire.brightness != null)
-                      _buildDetailRow('Brightness (K)', fire.brightness!.toStringAsFixed(1)),
-                    if (fire.frp != null)
-                      _buildDetailRow('Fire Radiative Power (MW)', fire.frp!.toStringAsFixed(1)),
-                    if (fire.scan != null)
-                      _buildDetailRow('Scan Size (km)', fire.scan!),
-                    if (fire.track != null)
-                      _buildDetailRow('Track Size (km)', fire.track!),
-                    _buildDetailRow('Intensity', fire.intensity.name.toUpperCase()),
-                    _buildDetailRow('Day/Night', fire.daynight ?? 'Unknown'),
-                    _buildDetailRow('Version', fire.version),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
 
-  Widget _buildDetailRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 120,
-            child: Text(
-              label,
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-          ),
-          Expanded(
-            child: Text(value),
-          ),
-        ],
-      ),
-    );
-  }
 
   void _showStatistics() {
     showDialog(
@@ -1331,6 +1408,266 @@ class _FirmsScreenState extends State<FirmsScreen>
   void dispose() {
     _filterPanelController.dispose();
     _locationSearchController.dispose();
+    _rebuildTimer?.cancel(); // Hủy timer để tránh memory leak
     super.dispose();
   }
 }
+
+class FireInfoPopup extends StatelessWidget {
+  final FirmsFireData fire;
+  final VoidCallback onClose;
+
+  const FireInfoPopup({
+    super.key,
+    required this.fire,
+    required this.onClose,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      elevation: 8,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        width: 280,
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surface,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header with close button
+            Row(
+              children: [
+                Icon(
+                  Icons.local_fire_department,
+                  color: _getFireColor(fire),
+                  size: 20,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Fire Details',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: _getFireColor(fire),
+                    ),
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close, size: 18),
+                  onPressed: onClose,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                ),
+              ],
+            ),
+            
+            const SizedBox(height: 12),
+            
+            // Location
+            _buildInfoRow(
+              icon: Icons.location_on,
+              label: 'Location',
+              value: '${fire.latitude.toStringAsFixed(4)}, ${fire.longitude.toStringAsFixed(4)}',
+              color: Colors.blue,
+            ),
+            
+            const SizedBox(height: 8),
+            
+            // Date & Time
+            Row(
+              children: [
+                Expanded(
+                  child: _buildCompactInfo(
+                    icon: Icons.calendar_today,
+                    label: 'Date',
+                    value: '${fire.acqDate.day}/${fire.acqDate.month}',
+                    color: Colors.green,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _buildCompactInfo(
+                    icon: Icons.access_time,
+                    label: 'Time',
+                    value: _formatFireTime(fire.acqTime),
+                    color: Colors.orange,
+                  ),
+                ),
+              ],
+            ),
+            
+            const SizedBox(height: 8),
+            
+            // Satellite & Confidence
+            Row(
+              children: [
+                Expanded(
+                  child: _buildCompactInfo(
+                    icon: Icons.satellite_alt,
+                    label: 'Satellite',
+                    value: fire.satellite,
+                    color: Colors.purple,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _buildCompactInfo(
+                    icon: Icons.verified,
+                    label: 'Confidence',
+                    value: fire.confidence,
+                    color: Colors.teal,
+                  ),
+                ),
+              ],
+            ),
+            
+            const SizedBox(height: 12),
+            
+            // Intensity badge
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+              decoration: BoxDecoration(
+                color: _getFireColor(fire).withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: _getFireColor(fire).withOpacity(0.3)),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.local_fire_department,
+                    color: _getFireColor(fire),
+                    size: 16,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    'Intensity: ${fire.intensity.name.toUpperCase()}',
+                    style: TextStyle(
+                      color: _getFireColor(fire),
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInfoRow({
+    required IconData icon,
+    required String label,
+    required String value,
+    required Color color,
+  }) {
+    return Row(
+      children: [
+        Icon(icon, color: color, size: 16),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 11,
+                  color: color.withOpacity(0.8),
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              Text(
+                value,
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCompactInfo({
+    required IconData icon,
+    required String label,
+    required String value,
+    required Color color,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: color.withOpacity(0.3)),
+      ),
+      child: Column(
+        children: [
+          Icon(icon, color: color, size: 14),
+          const SizedBox(height: 4),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 9,
+              color: color.withOpacity(0.8),
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          Text(
+            value,
+            style: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatFireTime(String acqTime) {
+    // acqTime format thường là "HHMM" (ví dụ: "1230" = 12:30)
+    if (acqTime.length == 4) {
+      final hours = acqTime.substring(0, 2);
+      final minutes = acqTime.substring(2, 4);
+      return '$hours:$minutes';
+    } else if (acqTime.length == 3) {
+      // Trường hợp "HMM" (ví dụ: "830" = 08:30)
+      final hours = '0${acqTime.substring(0, 1)}';
+      final minutes = acqTime.substring(1, 3);
+      return '$hours:$minutes';
+    } else {
+      // Trường hợp khác, trả về nguyên bản
+      return acqTime;
+    }
+  }
+
+  Color _getFireColor(FirmsFireData fire) {
+    switch (fire.intensity) {
+      case FireIntensity.extreme:
+        return Colors.red.shade800;
+      case FireIntensity.high:
+        return Colors.red.shade600;
+      case FireIntensity.moderate:
+        return Colors.orange.shade600;
+      case FireIntensity.low:
+        return Colors.yellow.shade600;
+      case FireIntensity.unknown:
+        return Colors.grey.shade600;
+    }
+  }
+}
+

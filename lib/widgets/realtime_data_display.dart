@@ -55,9 +55,9 @@ class _RealtimeDataDisplayState extends State<RealtimeDataDisplay> {
   Widget build(BuildContext context) {
     return Card(
       elevation: 4,
-      margin: const EdgeInsets.all(16),
+      margin: const EdgeInsets.all(12), // Giảm từ 16 xuống 12
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(12), // Giảm từ 16 xuống 12
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -75,7 +75,7 @@ class _RealtimeDataDisplayState extends State<RealtimeDataDisplay> {
                     'Real-time GNSS Data',
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      fontSize: 18,
+                      fontSize: 16, // Giảm từ 18 xuống 16
                       fontWeight: FontWeight.bold,
                     ),
                   ),
@@ -105,12 +105,12 @@ class _RealtimeDataDisplayState extends State<RealtimeDataDisplay> {
               ],
             ),
             
-            const SizedBox(height: 16),
+            const SizedBox(height: 12), // Giảm từ 16 xuống 12
             
             // Connection Status
             _buildConnectionStatusCard(),
             
-            const SizedBox(height: 16),
+            const SizedBox(height: 12), // Giảm từ 16 xuống 12
             
             // Real-time Data Display
             if (!_isRealtimeEnabled) ...[
@@ -342,7 +342,7 @@ class _RealtimeDataDisplayState extends State<RealtimeDataDisplay> {
 
   Widget _buildDataCard(String label, String value, IconData icon, Color color) {
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(10), // Giảm từ 12 xuống 10
       decoration: BoxDecoration(
         color: color.withOpacity(0.1),
         borderRadius: BorderRadius.circular(8),
@@ -373,7 +373,7 @@ class _RealtimeDataDisplayState extends State<RealtimeDataDisplay> {
           Text(
             value,
             style: const TextStyle(
-              fontSize: 16,
+              fontSize: 14, // Giảm từ 16 xuống 14
               fontWeight: FontWeight.bold,
             ),
           ),
